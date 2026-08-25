@@ -5,13 +5,12 @@ AIComply - CLI Entrypoint (Typer)
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Set
-import sys
 import typer
 from rich.console import Console
 
-from aicomply.evidence.hasher import compute_scan_hash
 from aicomply.reporter.json_report import generate_json_report
 from aicomply.reporter.markdown_report import generate_markdown_report
+from aicomply.reporter.terminal import render_terminal_report
 from aicomply.rules.loader import RuleLoadError, load_rules_from_dir
 from aicomply.scanner.engine import ScanEngine
 
@@ -22,22 +21,21 @@ app = typer.Typer(
 )
 console = Console()
 
-
 @app.callback()
 def main() -> None:
     """CLI de cumplimiento técnico y análisis determinista del EU AI Act."""
     pass
 
-
-
 class OutputFormat(str, Enum):
-    MARKDOWN = "markdown"
+    TERMINAL = "terminal"
     JSON = "json"
-
+    MARKDOWN = "markdown"
 
 def get_default_rules_dir() -> Path:
-    """Obtiene la ruta interna por defecto del catálogo de reglas."""
-    return Path(__file__).parent / "rules" / "eu_ai_act"
+    """
+    Obtiene la ruta base del catálogo de reglas
+    """
+    return Path(__file__).parent / "rules"
 
 
 @app.command(name="scan")
@@ -49,10 +47,10 @@ def scan(
         resolve_path=True,
     ),
     format: OutputFormat = typer.Option(
-        OutputFormat.MARKDOWN,
+        OutputFormat.TERMINAL,
         "--format",
         "-f",
-        help="Formato de salida del reporte (markdown, json).",
+        help="Formato de salida del reporte (terminal, markdown, json).",
     ),
     articles: Optional[str] = typer.Option(
         None,
@@ -64,12 +62,12 @@ def scan(
         None,
         "--output",
         "-o",
-        help="Ruta para guardar el reporte emitido.",
+        help="Ruta para guardar el reporte emitido en disco.",
     ),
     evidence: bool = typer.Option(
         False,
         "--evidence",
-        help="Incluir identificadores de hash SHA-256 por cada hallazgo.",
+        help="Incluir identificadores criptográficos SHA-256 por cada hallazgo.",
     ),
     rules_dir: Optional[Path] = typer.Option(
         None,
@@ -98,18 +96,23 @@ def scan(
         console.print(f"[bold red]Error durante la ejecución del escaneo:[/bold red] {exc}")
         raise typer.Exit(code=2)
 
-    if format == OutputFormat.JSON:
-        output_content = generate_json_report(report)
-    else:
-        output_content = generate_markdown_report(report, include_evidence=evidence)
-
+    # Gestión de salida según formato
     if output:
-        output.write_text(output_content, encoding="utf-8")
+        content = (
+            generate_json_report(report)
+            if format == OutputFormat.JSON
+            else generate_markdown_report(report, include_evidence=evidence)
+        )
+        output.write_text(content, encoding="utf-8")
         console.print(f"[green]Reporte guardado exitosamente en:[/green] {output}")
     else:
-        console.print(output_content)
+        if format == OutputFormat.JSON:
+            console.print(generate_json_report(report))
+        elif format == OutputFormat.MARKDOWN:
+            console.print(generate_markdown_report(report, include_evidence=evidence))
+        else:
+            render_terminal_report(report, include_evidence=evidence, console=console)
 
-    # Exit code: 1 si hay hallazgos (para CI/CD gating), 0 si está limpio
     if report.summary.total_findings > 0:
         raise typer.Exit(code=1)
     raise typer.Exit(code=0)
