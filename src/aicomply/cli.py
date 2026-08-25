@@ -14,6 +14,11 @@ from aicomply.reporter.terminal import render_terminal_report
 from aicomply.rules.loader import RuleLoadError, load_rules_from_dir
 from aicomply.scanner.engine import ScanEngine
 
+from aicomply.classifier.assess import (
+    render_assessment_report,
+    run_interactive_assessment,
+)
+
 app = typer.Typer(
     name="aicomply",
     help="CLI de cumplimiento técnico y análisis determinista del EU AI Act.",
@@ -117,6 +122,11 @@ def scan(
         raise typer.Exit(code=1)
     raise typer.Exit(code=0)
 
+@app.command(name="assess")
+def assess() -> None:
+    """Asistente interactivo guiado para clasificar el nivel de riesgo de un caso de uso."""
+    result = run_interactive_assessment(console=console)
+    render_assessment_report(result, console=console)
 
 if __name__ == "__main__":
     app()
