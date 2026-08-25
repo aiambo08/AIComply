@@ -20,13 +20,14 @@ def compute_finding_hash(
     Calcula un hash SHA-256 determinista para un hallazgo específico.
     Normaliza rutas relativas y elimina variaciones de espacios en blanco.
     """
+    normalized_snippet = snippet.replace("\r\n", "\n").replace("\r", "\n").strip()
     canonical_payload = {
         "rule_id": rule_id.strip().upper(),
         "file_path": location.file_path.replace("\\", "/").strip(),
         "start_line": location.start_line,
         "end_line": location.end_line,
         "target": target.strip(),
-        "snippet_normalized": snippet.strip()
+        "snippet_normalized": normalized_snippet,
     }
     
     encoded = json.dumps(canonical_payload, sort_keys=True).encode("utf-8")
