@@ -18,3 +18,22 @@ def test_filter_by_articles():
     
     filtered = catalog.filter_by_articles({"5"})
     assert all("ART05" in r.id for r in filtered)
+
+
+def test_filter_by_article_50_transparency():
+    rules_path = get_default_rules_dir()
+    catalog = load_rules_from_dir(rules_path)
+    
+    filtered = catalog.filter_by_articles({"50"})
+    assert len(filtered) > 0
+    assert any("50" in r.article for r in filtered)
+
+
+def test_filter_by_multiple_articles():
+    rules_path = get_default_rules_dir()
+    catalog = load_rules_from_dir(rules_path)
+    
+    filtered = catalog.filter_by_articles({"Art. 5", "12", "50"})
+    articles_found = {r.id.split("-")[1] for r in filtered}
+    assert "ART05" in articles_found
+    assert "ART12" in articles_found

@@ -3,6 +3,7 @@ AIComply - YAML Rules Loader
 Carga y valida todas las reglas YAML contra los esquemas Pydantic v2.
 """
 
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 import yaml
@@ -29,17 +30,30 @@ class RuleCatalog:
         return self._rule_map.get(rule_id.upper())
 
     def filter_by_articles(self, articles: Set[str]) -> List[Rule]:
-        """Filtra reglas por número de artículo (ej. {'5', '12', '13'})."""
-        normalized = {f"art{art.lower().replace('art', '').strip()}" for art in articles}
+        """Filtra reglas por número de artículo (ej. {'5', '12', '13', '50'})."""
+        normalized_targets = {
+            re.sub(r"[^0-9a-zA-Z]", "", art.lower()).replace("art", "").lstrip("0")
+            for art in articles
+        }
         filtered: List[Rule] = []
-        
+
         for rule in self._rules:
-            # Extraer número de artículo del campo 'article' o del 'id'
-            rule_art = rule.id.split("-")[1].lower()  # ej: ART05 -> art05
-            rule_art_num = rule_art.replace("art", "").lstrip("0")
-            if f"art{rule_art_num}" in normalized or rule_art in normalized:
+            # Extraer números de artículo usando expresiones regulares precisas
+            text_to_search = f"{rule.id} {rule.article}"
+            # Extrae ocurrencias tipo ART05, Art. 5, Art 50, etc.
+            art_matches = set()
+            for m in re.finditer(r"(?:art(?:icle)?\.?\s*(\d+))", text_to_search, re.IGNORECASE):
+                art_matches.add(m.group(1).lstrip("0"))
+            
+            # Extraer id token (ej. ART05 -> 5, GEN -> gen)
+            id_parts = rule.id.split("-")
+            if len(id_parts) >= 2:
+                id_art = id_parts[1].lower().replace("art", "").lstrip("0")
+                art_matches.add(id_art)
+
+            if any(t in art_matches for t in normalized_targets if t):
                 filtered.append(rule)
-                
+
         return filtered
 
 
