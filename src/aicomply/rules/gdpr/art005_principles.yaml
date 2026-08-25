@@ -1,0 +1,12 @@
+- id: "GDPR-ART05-001"
+  article: "RGPD Art. 5(1)(c)"
+  title: "Persistencia de prompts o logs con datos personales no enmascarados"
+  severity: "MEDIUM"
+  risk_tier: "limited_risk"
+  description: "Registro indiscriminado de payloads completos enviados a proveedores LLM sin sanitización previa de información personal identificable (PII)."
+  remediation: "Aplicar enmascaramiento de tokens de usuario (emails, DNIs, nombres) previo al almacenamiento en logs persistentes."
+  max_fine: "20M€ o 4% facturación global"
+  confidence: "LOW"
+  patterns:
+    - type: "regex"
+      target: "(?i)log_raw_payload\\s*=\\s*True"

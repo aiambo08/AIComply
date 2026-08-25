@@ -37,3 +37,14 @@ def test_filter_by_multiple_articles():
     articles_found = {r.id.split("-")[1] for r in filtered}
     assert "ART05" in articles_found
     assert "ART12" in articles_found
+
+
+def test_load_gdpr_rules():
+    rules_path = get_default_rules_dir()
+    catalog = load_rules_from_dir(rules_path)
+    
+    gdpr_rules = [r for r in catalog.rules if r.id.startswith("GDPR-")]
+    assert len(gdpr_rules) >= 3
+    assert catalog.get_by_id("GDPR-ART05-001") is not None
+    assert catalog.get_by_id("GDPR-ART09-001") is not None
+    assert catalog.get_by_id("GDPR-ART22-001") is not None
