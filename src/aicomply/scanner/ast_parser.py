@@ -20,21 +20,23 @@ from aicomply.schemas import (
 
 class ASTContextVisitor(ast.NodeVisitor):
     """
-    Recorre el AST recopilando imports, llamadas a funciones y resolviendo
-    resoluciones de alias locales.
+    Recorre el AST recopilando imports, llamadas a funciones, asignaciones
+    y resolviendo referencias de variables locales y alias.
     """
 
     def __init__(self, source_code: str, file_path: str) -> None:
         self.source_code = source_code
         self.source_lines = source_code.splitlines()
         self.file_path = file_path
-        
-        # Mapeo de alias a nombres completos: {"oai": "openai", "analyze": "DeepFace.analyze"}
+
+        # Mapeo de alias a nombres completos: {"oai": "openai", "client": "openai.OpenAI"}
         self.aliases: Dict[str, str] = {}
-        
-        # Registros de nodos identificados: (nombre_resuelto, nodo_ast, kwargs_dict)
+
+        # Registros de nodos identificados
         self.imports: List[Tuple[str, ast.AST]] = []
         self.calls: List[Tuple[str, ast.Call, Dict[str, Any]]] = []
+        self.assignments: List[Tuple[str, Any, ast.AST]] = []
+        self.function_defs: List[Tuple[str, ast.AST]] = []
         self.has_logging: bool = False
 
     def visit_Import(self, node: ast.Import) -> None:
@@ -43,13 +45,13 @@ class ASTContextVisitor(ast.NodeVisitor):
             imported_as = alias.asname or module_name
             self.aliases[imported_as] = module_name
             self.imports.append((module_name, node))
-            if module_name in {"logging", "loguru", "structlog"}:
+            if any(log_mod in module_name for log_mod in ["logging", "loguru", "structlog", "telemetry", "audit"]):
                 self.has_logging = True
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
-        if module in {"logging", "loguru", "structlog"}:
+        if any(log_mod in module for log_mod in ["logging", "loguru", "structlog", "telemetry", "audit"]):
             self.has_logging = True
 
         for alias in node.names:
@@ -65,7 +67,9 @@ class ASTContextVisitor(ast.NodeVisitor):
             return self.aliases.get(node.id, node.id)
         elif isinstance(node, ast.Attribute):
             value_str = self._resolve_call_name(node.value)
-            return f"{value_str}.{node.attr}"
+            return f"{value_str}.{node.attr}" if value_str else node.attr
+        elif isinstance(node, ast.Call):
+            return self._resolve_call_name(node.func)
         return ""
 
     def _extract_call_args(self, node: ast.Call) -> Dict[str, Any]:
@@ -81,12 +85,60 @@ class ASTContextVisitor(ast.NodeVisitor):
                     ]
         return args_dict
 
+    def visit_Assign(self, node: ast.Assign) -> None:
+        # 1. Inferencia de tipo por instanciación: client = OpenAI() -> aliases["client"] = "openai.OpenAI"
+        if isinstance(node.value, ast.Call):
+            call_name = self._resolve_call_name(node.value.func)
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.aliases[target.id] = call_name
+
+        # 2. Asignación de alias directo: engine = client -> aliases["engine"] = aliases["client"]
+        elif isinstance(node.value, ast.Name):
+            source_val = self.aliases.get(node.value.id, node.value.id)
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.aliases[target.id] = source_val
+
+        # 3. Asignación de constantes para AST_ASSIGNMENT: ai_disclaimer = False
+        for target in node.targets:
+            if isinstance(target, ast.Name) and isinstance(node.value, ast.Constant):
+                self.assignments.append((target.id, node.value.value, node))
+
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if isinstance(node.target, ast.Name):
+            if node.value and isinstance(node.value, ast.Constant):
+                self.assignments.append((node.target.id, node.value.value, node))
+            elif node.value and isinstance(node.value, ast.Call):
+                call_name = self._resolve_call_name(node.value.func)
+                self.aliases[node.target.id] = call_name
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.function_defs.append((node.name, node))
+        # Comprobar decoradores de logging/auditoría
+        for dec in node.decorator_list:
+            dec_name = self._resolve_call_name(dec)
+            if any(log_kw in dec_name.lower() for log_kw in ["log", "audit", "trace", "telemetry"]):
+                self.has_logging = True
+        self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.function_defs.append((node.name, node))
+        for dec in node.decorator_list:
+            dec_name = self._resolve_call_name(dec)
+            if any(log_kw in dec_name.lower() for log_kw in ["log", "audit", "trace", "telemetry"]):
+                self.has_logging = True
+        self.generic_visit(node)
+
     def visit_Call(self, node: ast.Call) -> None:
         call_name = self._resolve_call_name(node.func)
         args_dict = self._extract_call_args(node)
-        
-        # Detección básica de logging en llamada
-        if any(log_kw in call_name.lower() for log_kw in ["log", "logger", "logging", "audit"]):
+
+        # Detección de logging en llamada
+        if any(log_kw in call_name.lower() for log_kw in ["log", "logger", "logging", "audit", "structlog"]):
             self.has_logging = True
 
         self.calls.append((call_name, node, args_dict))
@@ -107,13 +159,14 @@ class PythonASTScanner:
 
     def scan_file(self, file_path: Path, base_path: Optional[Path] = None) -> List[Finding]:
         findings: List[Finding] = []
+        seen_finding_ids: Set[str] = set()
         rel_path = str(file_path.relative_to(base_path)) if base_path else str(file_path)
 
         try:
             source = file_path.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(file_path))
-        except (SyntaxError, UnicodeDecodeError):
-            # Archivo con sintaxis rota o encoding no válido se omite del análisis AST
+        except Exception:
+            # Archivo con sintaxis rota, encoding corrupto o inaccesible se omite de AST
             return findings
 
         visitor = ASTContextVisitor(source, rel_path)
@@ -122,7 +175,10 @@ class PythonASTScanner:
         for rule in self.rules:
             for pattern in rule.patterns:
                 matched_findings = self._evaluate_pattern(rule, pattern, visitor, rel_path)
-                findings.extend(matched_findings)
+                for f in matched_findings:
+                    if f.id not in seen_finding_ids:
+                        seen_finding_ids.add(f.id)
+                        findings.append(f)
 
         return findings
 
@@ -134,30 +190,46 @@ class PythonASTScanner:
         rel_path: str
     ) -> List[Finding]:
         results: List[Finding] = []
+        target_lower = pattern.target.lower()
 
         if pattern.type == PatternType.AST_IMPORT:
             for imp_name, node in visitor.imports:
-                if pattern.target in imp_name:
+                if target_lower in imp_name.lower():
                     results.append(self._create_finding(rule, pattern, node, visitor, rel_path))
 
         elif pattern.type == PatternType.AST_CALL:
             for call_name, node, kwargs in visitor.calls:
-                # Comprobar coincidencia en el nombre de la función / método
-                if pattern.target in call_name:
+                if target_lower in call_name.lower():
                     if pattern.match_args:
-                        # Si requiere argumentos específicos, validar coincidencia exacta o subconjunto
                         if not self._check_match_args(pattern.match_args, kwargs):
                             continue
                     results.append(self._create_finding(rule, pattern, node, visitor, rel_path))
 
+        elif pattern.type == PatternType.AST_ASSIGNMENT:
+            for var_name, var_value, node in visitor.assignments:
+                if target_lower == var_name.lower():
+                    if pattern.match_args:
+                        if not self._check_match_args(pattern.match_args, {"value": var_value}):
+                            continue
+                    results.append(self._create_finding(rule, pattern, node, visitor, rel_path))
+
+        elif pattern.type == PatternType.AST_FUNCTION_DEF:
+            for fn_name, node in visitor.function_defs:
+                if target_lower in fn_name.lower():
+                    results.append(self._create_finding(rule, pattern, node, visitor, rel_path))
+
         elif pattern.type == PatternType.AST_ABSENCE:
-            # Detección de ausencia (ej. LLM calls presentes en el archivo sin logging configurado)
-            llm_calls = [
-                (name, node) for name, node, _ in visitor.calls 
-                if any(provider in name.lower() for provider in ["openai", "anthropic", "langchain", "cohere"])
+            # Detección de ausencia: evaluar llamadas a la librería/API del target cuando no hay logging
+            target_parts = [p.lower() for p in pattern.target.split(".") if p]
+            target_root = target_parts[0] if target_parts else ""
+
+            matching_calls = [
+                (name, node) for name, node, _ in visitor.calls
+                if (target_root and target_root in name.lower())
+                or any(len(p) > 3 and p in name.lower() for p in target_parts)
             ]
-            if llm_calls and not visitor.has_logging:
-                for _, node in llm_calls:
+            if matching_calls and not visitor.has_logging:
+                for _, node in matching_calls:
                     results.append(self._create_finding(rule, pattern, node, visitor, rel_path))
 
         return results
@@ -169,9 +241,9 @@ class PythonASTScanner:
                 return False
             actual_val = call_args[key]
             if isinstance(actual_val, list) and isinstance(expected_val, str):
-                if expected_val not in actual_val:
+                if expected_val.lower() not in [str(x).lower() for x in actual_val]:
                     return False
-            elif actual_val != expected_val:
+            elif str(actual_val).lower() != str(expected_val).lower():
                 return False
         return True
 
