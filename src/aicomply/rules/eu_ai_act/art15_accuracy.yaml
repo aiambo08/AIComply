@@ -1,0 +1,12 @@
+- id: "EUAIA-ART15-001"
+  article: "Art. 15"
+  title: "Invocación de modelos en producción sin manejo de fallos ni fallback"
+  severity: "LOW"
+  risk_tier: "high_risk"
+  description: "Los sistemas de alto riesgo deben ser técnicamente robustos y resistentes frente a errores, fallos o inconsistencias en la entrada."
+  remediation: "Encapsular las llamadas al LLM en bloques try-except con políticas de reintento exponencial y rutas de contingencia (fallbacks)."
+  max_fine: "15M€ o 3% facturación global"
+  confidence: "MEDIUM"
+  patterns:
+    - type: "ast_call"
+      target: "unhandled_model_inference"

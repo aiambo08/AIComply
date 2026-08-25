@@ -1,0 +1,12 @@
+- id: "EUAIA-ART09-001"
+  article: "Art. 9"
+  title: "Omisión del sistema continuo de gestión de riesgos"
+  severity: "LOW"
+  risk_tier: "high_risk"
+  description: "Debe implantarse y documentarse un sistema continuo e iterativo de gestión de riesgos a lo largo de todo el ciclo de vida del sistema de IA."
+  remediation: "Incorporar pipelines de evaluación continua y monitoreo de deriva/fallos en producción."
+  max_fine: "15M€ o 3% facturación global"
+  confidence: "LOW"
+  patterns:
+    - type: "regex"
+      target: "(?i)bypass_risk_evaluation"

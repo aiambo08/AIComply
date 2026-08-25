@@ -1,0 +1,12 @@
+- id: "EUAIA-ART11-001"
+  article: "Art. 11"
+  title: "Falta de especificación técnica del modelo o documentación de propósito"
+  severity: "MEDIUM"
+  risk_tier: "high_risk"
+  description: "Se debe elaborar y mantener actualizada la documentación técnica del sistema conforme al Anexo IV antes de su puesta en servicio."
+  remediation: "Incluir un archivo MODEL_CARD.md o docstrings técnicos estructurados definiendo el propósito, limitaciones y arquitectura del modelo."
+  max_fine: "15M€ o 3% facturación global"
+  confidence: "LOW"
+  patterns:
+    - type: "regex"
+      target: "(?i)MODEL_CARD_DISABLED"

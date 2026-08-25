@@ -1,0 +1,12 @@
+- id: "EUAIA-ART13-001"
+  article: "Art. 50(1) / Art. 13"
+  title: "Falta de notificación explícita de interacción con IA"
+  severity: "HIGH"
+  risk_tier: "limited_risk"
+  description: "Los proveedores deben garantizar que los sistemas de IA destinados a interactuar con personas físicas informen de forma clara e inmediata de que están interactuando con un sistema de IA."
+  remediation: "Incluir disclaimers de transparencia en los endpoints o salidas que entregan contenido directamente a usuarios finales."
+  max_fine: "15M€ o 3% facturación global"
+  confidence: "LOW"
+  patterns:
+    - type: "regex"
+      target: "(?i)ai_disclaimer\\s*=\\s*False"
