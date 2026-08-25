@@ -89,7 +89,7 @@ def render_terminal_report(
 
     summary_tables.add_row(
         str(report.summary.total_files_scanned),
-        f"{report.summary.total_files_scanned:,}",
+        f"{report.summary.total_lines_scanned:,}",
         str(report.summary.rules_loaded),
         f"[bold red]{report.summary.total_findings}[/bold red]"
         if report.summary.total_findings > 0 else
