@@ -64,7 +64,11 @@ class Rule(BaseModel):
     """Estructura de una regla de cumplimiento del EU AI Act."""
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: str = Field(..., pattern=r"^EUAIA-(ART\d+|GEN)-\d{3}$", description="Identificador único (ej. EUAIA-ART05-001)")
+    id: str = Field(
+        ...,
+        pattern=r"^[A-Z0-9]{3,8}-(ART\d+|GEN)-\d{3}$",
+        description="Identificador único (ej. EUAIA-ART05-001, GDPR-ART09-001)",
+    )
     article: str = Field(..., description="Artículo de referencia en el EU AI Act (ej. Art. 5(1)(c))")
     title: str = Field(..., min_length=5, max_length=150)
     severity: Severity
