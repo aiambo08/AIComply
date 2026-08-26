@@ -5,7 +5,7 @@ Fallback determinista para escaneo por expresiones regulares en código fuente n
 
 from pathlib import Path
 import re
-from typing import List, Optional
+from typing import List, Optional, Set, Tuple
 
 from aicomply.evidence.hasher import compute_finding_hash
 from aicomply.schemas import (
@@ -18,8 +18,7 @@ from aicomply.schemas import (
 
 
 class RegexScanner:
-    """Escanea archivos de texto plano línea por línea contra reglas tipo REGEX."""
-
+    """Escanea archivos de texto plano contra patrones REGEX respetando supresiones."""
     def __init__(self, rules: List[Rule]) -> None:
         # Filtrar solo reglas que definan patrones REGEX
         self.regex_rules = [
@@ -28,6 +27,16 @@ class RegexScanner:
             for pattern in rule.patterns
             if pattern.type == PatternType.REGEX
         ]
+    
+    def _extract_suppressions(self, line: str) -> Set[str]:
+        """Extrae directivas de supresión: # aicomply:ignore ID1,ID2 o // aicomply:ignore ID1."""
+        if "aicomply:ignore" not in line:
+            return set()
+        parts = line.split("aicomply:ignore")
+        if len(parts) <= 1:
+            return set()
+        raw_tokens = parts[1].strip().split()
+        return {token.strip(",;#/").upper() for token in raw_tokens if token.strip(",;#/")}
 
     def scan_file(self, file_path: Path, base_path: Optional[Path] = None) -> List[Finding]:
         findings: List[Finding] = []
@@ -37,11 +46,23 @@ class RegexScanner:
             lines = file_path.read_text(encoding="utf-8").splitlines()
         except (UnicodeDecodeError, PermissionError):
             return findings
+        
+        seen_keys: Set[Tuple[str, str, int]] = set()
 
         for line_idx, line_content in enumerate(lines, start=1):
+            suppressions = self._extract_suppressions(line_content)
+
             for rule, pattern in self.regex_rules:
+                if rule.id in suppressions or "ALL" in suppressions:
+                    continue
+
                 match = re.search(pattern.target, line_content)
                 if match:
+                    dedup_key = (rule.id, rel_path, line_idx)
+                    if dedup_key in seen_keys:
+                        continue
+                    seen_keys.add(dedup_key)
+                    
                     loc = CodeLocation(
                         file_path=rel_path,
                         start_line=line_idx,

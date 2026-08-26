@@ -1,20 +1,22 @@
 """
 AIComply - Scan Engine Orchestrator
-Coordina la lectura del código fuente, el paso por AST/Regex y la agregación determinista.
+Coordina la configuración del proyecto (.aicomply.yaml), el análisis AST/Regex,
+el filtrado por exclusiones y la agregación determinista del reporte.
 """
 
 from datetime import datetime, timezone
+from fnmatch import fnmatch
 from pathlib import Path
 import time
 from typing import List, Optional, Set
 
 from aicomply.classifier.risk_tier import classify_overall_risk
+from aicomply.config import AIComplyConfig, load_project_config
 from aicomply.evidence.hasher import compute_scan_hash
 from aicomply.rules.loader import RuleCatalog
 from aicomply.scanner.ast_parser import PythonASTScanner
 from aicomply.scanner.regex_matcher import RegexScanner
-from aicomply.schemas import Finding, RiskTier, ScanReport, ScanSummary, Severity
-
+from aicomply.schemas import Finding, RiskTier, Rule, ScanReport, ScanSummary, Severity
 IGNORED_DIRS = {
     ".git",
     "__pycache__",
@@ -35,17 +37,34 @@ TEXT_EXTENSIONS = {".py", ".js", ".ts", ".jsx", ".tsx", ".yaml", ".yml", ".json"
 
 
 class ScanEngine:
-    """Motor central de escaneo determinista."""
+    """Motor central de escaneo determinista con soporte de configuración."""
 
-    def __init__(self, catalog: RuleCatalog, target_articles: Optional[Set[str]] = None) -> None:
+    def __init__(self, catalog: RuleCatalog, target_articles: Optional[Set[str]] = None, config: Optional[AIComplyConfig] = None) -> None:
         self.catalog = catalog
-        self.rules = (
-            self.catalog.filter_by_articles(target_articles)
-            if target_articles
-            else self.catalog.rules
-        )
+        self.config = config or AIComplyConfig()
+        self.target_articles = target_articles
+        self.rules: List[Rule] = self._prepare_active_rules()
         self.ast_scanner = PythonASTScanner(self.rules)
         self.regex_scanner = RegexScanner(self.rules)
+    
+    def _prepare_active_rules(self) -> List[Rule]:
+        """Aplica filtros de artículos CLI y exclusiones de reglas declaradas en la configuración."""
+        candidate_rules = (
+            self.catalog.filter_by_articles(self.target_articles)
+            if self.target_articles
+            else self.catalog.rules
+        )
+        ignored_set = {r.strip().upper() for r in self.config.ignore_rules}
+        return [rule for rule in candidate_rules if rule.id.upper() not in ignored_set]
+
+    def _is_path_excluded(self, rel_path: str) -> bool:
+        """Verifica si una ruta relativa coincide con los patrones exclude_paths de .aicomply.yaml."""
+        norm_path = rel_path.replace("\\", "/")
+        for pattern in self.config.exclude_paths:
+            norm_pattern = pattern.replace("\\", "/")
+            if fnmatch(norm_path, norm_pattern) or fnmatch(norm_path, f"*/{norm_pattern}"):
+                return True
+        return False
 
     def scan_path(self, target_path: Path) -> ScanReport:
         start_time = time.perf_counter()
@@ -54,19 +73,34 @@ class ScanEngine:
         if not target_path.exists():
             raise FileNotFoundError(f"La ruta objetivo no existe: {target_path}")
 
+        # Si no se pasó configuración explícita, buscar .aicomply.yaml en la raíz objetivo
+        base_dir = target_path if target_path.is_dir() else target_path.parent
+        if self.config == AIComplyConfig():
+            loaded_cfg = load_project_config(base_dir)
+            if loaded_cfg != self.config:
+                self.config = loaded_cfg
+                self.rules = self._prepare_active_rules()
+                self.ast_scanner = PythonASTScanner(self.rules)
+                self.regex_scanner = RegexScanner(self.rules)
+
         files_to_scan: List[Path] = []
         if target_path.is_file():
-            files_to_scan.append(target_path)
-            base_dir = target_path.parent
+            rel_file = str(target_path.relative_to(base_dir)).replace("\\", "/")
+            if not self._is_path_excluded(rel_file):
+                files_to_scan.append(target_path)
         else:
-            base_dir = target_path
             for path in target_path.rglob("*"):
                 if path.is_file():
-                    # Comprobar si pertenece a una carpeta ignorada
                     if any(ignored in path.parts for ignored in IGNORED_DIRS):
                         continue
-                    if path.suffix.lower() in TEXT_EXTENSIONS:
-                        files_to_scan.append(path)
+                    if path.suffix.lower() not in TEXT_EXTENSIONS:
+                        continue
+
+                    rel_path_str = str(path.relative_to(base_dir)).replace("\\", "/")
+                    if self._is_path_excluded(rel_path_str):
+                        continue
+
+                    files_to_scan.append(path)
 
         findings: List[Finding] = []
         total_lines = 0
