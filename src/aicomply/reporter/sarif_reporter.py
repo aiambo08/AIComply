@@ -75,7 +75,7 @@ def generate_sarif_report(report: ScanReport) -> str:
                     "driver": {
                         "name": "AIComply",
                         "version": "0.1.0",
-                        "informationUri": "https://github.com/aibo-ni/aicomply",
+                        "informationUri": "https://github.com/aiambo08/AIComply",
                         "rules": list(rules_dict.values()),
                     }
                 },
