@@ -102,3 +102,26 @@ def test_generate_sarif_report(engine: ScanEngine):
     assert len(sarif_json["runs"]) == 1
     assert sarif_json["runs"][0]["tool"]["driver"]["name"] == "AIComply"
     assert len(sarif_json["runs"][0]["results"]) >= 2
+    for res in sarif_json["runs"][0]["results"]:
+        assert "ruleIndex" in res
+        assert isinstance(res["ruleIndex"], int)
+        assert res["ruleIndex"] >= 0
+
+
+def test_cross_engine_deduplication(tmp_path: Path):
+    """Verifica que una misma regla con coincidencia AST y Regex en la misma línea no genere duplicados."""
+    from aicomply.cli import get_default_rules_dir
+    from aicomply.rules.loader import load_rules_from_dir
+
+    rules = load_rules_from_dir(get_default_rules_dir())
+    engine = ScanEngine(catalog=rules)
+
+    # Insecure TLS trigger for both AST (requests.post verify=False) and Regex (verify=False)
+    test_code = 'import requests\nrequests.post("https://api.internal/v1", json={}, verify=False)\n'
+    test_file = tmp_path / "tls_test.py"
+    test_file.write_text(test_code, encoding="utf-8")
+
+    report = engine.scan_path(test_file)
+    gdpr_tls_findings = [f for f in report.findings if f.rule_id == "GDPR-ART32-002"]
+    # Debería haber exactamente 1 hallazgo gracias a la deduplicación cross-engine
+    assert len(gdpr_tls_findings) == 1

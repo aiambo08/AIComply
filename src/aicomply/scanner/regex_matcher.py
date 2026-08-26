@@ -20,13 +20,16 @@ from aicomply.schemas import (
 class RegexScanner:
     """Escanea archivos de texto plano contra patrones REGEX respetando supresiones."""
     def __init__(self, rules: List[Rule]) -> None:
-        # Filtrar solo reglas que definan patrones REGEX
-        self.regex_rules = [
-            (rule, pattern)
-            for rule in rules
-            for pattern in rule.patterns
-            if pattern.type == PatternType.REGEX
-        ]
+        # Pre-compilar patrones REGEX para evitar recompilación por línea
+        self.regex_rules: List[Tuple[Rule, RulePattern, "re.Pattern[str]"]] = []
+        for rule in rules:
+            for pattern in rule.patterns:
+                if pattern.type == PatternType.REGEX:
+                    try:
+                        compiled = re.compile(pattern.target)
+                        self.regex_rules.append((rule, pattern, compiled))
+                    except re.error:
+                        continue  # Patrón inválido descartado silenciosamente
     
     def _extract_suppressions(self, line: str) -> Set[str]:
         """Extrae directivas de supresión: # aicomply:ignore ID1,ID2 o // aicomply:ignore ID1."""
@@ -52,11 +55,11 @@ class RegexScanner:
         for line_idx, line_content in enumerate(lines, start=1):
             suppressions = self._extract_suppressions(line_content)
 
-            for rule, pattern in self.regex_rules:
+            for rule, pattern, compiled in self.regex_rules:
                 if rule.id in suppressions or "ALL" in suppressions:
                     continue
 
-                match = re.search(pattern.target, line_content)
+                match = compiled.search(line_content)
                 if match:
                     dedup_key = (rule.id, rel_path, line_idx)
                     if dedup_key in seen_keys:
@@ -90,4 +93,4 @@ class RegexScanner:
                         )
                     )
 
-        return findings
+        return findings

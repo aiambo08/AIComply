@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fnmatch import fnmatch
 from pathlib import Path
 import time
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 from aicomply.classifier.risk_tier import classify_overall_risk
 from aicomply.config import AIComplyConfig, load_project_config
@@ -104,6 +104,8 @@ class ScanEngine:
 
         findings: List[Finding] = []
         total_lines = 0
+        # Deduplicación cross-engine: (rule_id, file_path, start_line)
+        seen_dedup_keys: Set[Tuple[str, str, int]] = set()
 
         for file_path in sorted(files_to_scan):
             try:
@@ -112,14 +114,23 @@ class ScanEngine:
             except Exception:
                 line_count = 0
 
-            # 1. Análisis AST en archivos Python
+            file_findings: List[Finding] = []
+
+            # 1. Análisis AST en archivos Python (prioridad sobre Regex)
             if file_path.suffix.lower() in PYTHON_EXTENSIONS:
                 ast_findings = self.ast_scanner.scan_file(file_path, base_path=base_dir)
-                findings.extend(ast_findings)
+                file_findings.extend(ast_findings)
 
             # 2. Análisis Regex complementario
             regex_findings = self.regex_scanner.scan_file(file_path, base_path=base_dir)
-            findings.extend(regex_findings)
+            file_findings.extend(regex_findings)
+
+            # 3. Deduplicación: primera detección (AST) prevalece sobre Regex
+            for f in file_findings:
+                dedup_key = (f.rule_id, f.location.file_path, f.location.start_line)
+                if dedup_key not in seen_dedup_keys:
+                    seen_dedup_keys.add(dedup_key)
+                    findings.append(f)
 
         execution_time = (time.perf_counter() - start_time) * 1000  # ms
 
