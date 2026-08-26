@@ -11,6 +11,7 @@ from rich.console import Console
 from aicomply.reporter.json_report import generate_json_report
 from aicomply.reporter.markdown_report import generate_markdown_report
 from aicomply.reporter.terminal import render_terminal_report
+from aicomply.reporter.sarif_reporter import generate_sarif_report
 from aicomply.rules.loader import RuleLoadError, load_rules_from_dir
 from aicomply.scanner.engine import ScanEngine
 
@@ -18,6 +19,7 @@ from aicomply.classifier.assess import (
     render_assessment_report,
     run_interactive_assessment,
 )
+
 
 app = typer.Typer(
     name="aicomply",
@@ -35,6 +37,7 @@ class OutputFormat(str, Enum):
     TERMINAL = "terminal"
     JSON = "json"
     MARKDOWN = "markdown"
+    SARIF = "sarif"
 
 def get_default_rules_dir() -> Path:
     """
@@ -103,16 +106,20 @@ def scan(
 
     # Gestión de salida según formato
     if output:
-        content = (
-            generate_json_report(report)
-            if format == OutputFormat.JSON
-            else generate_markdown_report(report, include_evidence=evidence)
-        )
+        if format == OutputFormat.JSON:
+            content = generate_json_report(report)
+        elif format == OutputFormat.SARIF:
+            content = generate_sarif_report(report)
+        else:
+            content = generate_markdown_report(report, include_evidence=evidence)
+            
         output.write_text(content, encoding="utf-8")
         console.print(f"[green]Reporte guardado exitosamente en:[/green] {output}")
     else:
         if format == OutputFormat.JSON:
             console.print(generate_json_report(report))
+        elif format == OutputFormat.SARIF:
+            console.print(generate_sarif_report(report))
         elif format == OutputFormat.MARKDOWN:
             console.print(generate_markdown_report(report, include_evidence=evidence))
         else:
