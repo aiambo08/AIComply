@@ -20,6 +20,8 @@ from aicomply.classifier.assess import (
     run_interactive_assessment,
 )
 
+from aicomply.generator.annex_iv import AnnexIVGenerator
+
 
 app = typer.Typer(
     name="aicomply",
@@ -134,6 +136,57 @@ def assess() -> None:
     """Asistente interactivo guiado para clasificar el nivel de riesgo de un caso de uso."""
     result = run_interactive_assessment(console=console)
     render_assessment_report(result, console=console)
+
+@app.command(name="docgen")
+def docgen(
+    path: Path = typer.Argument(
+        ...,
+        help="Ruta al repositorio del proyecto para auditar y documentar.",
+        exists=True,
+        resolve_path=True,
+    ),
+    system_name: str = typer.Option(
+        "AI-Production-System",
+        "--name",
+        "-n",
+        help="Nombre formal del sistema de IA para el dossier.",
+    ),
+    system_version: str = typer.Option(
+        "1.0.0",
+        "--version",
+        "-v",
+        help="Versión del sistema de IA.",
+    ),
+    output: Path = typer.Option(
+        Path("ANNEX_IV_TECHNICAL_DOCS.md"),
+        "--output",
+        "-o",
+        help="Ruta del archivo Markdown donde se guardará el expediente.",
+    ),
+    rules_dir: Optional[Path] = typer.Option(
+        None,
+        "--rules-dir",
+        help="Directorio personalizado de reglas YAML.",
+    ),
+) -> None:
+    """Genera el Dossier de Documentación Técnica formal exigido por el Anexo IV del EU AI Act."""
+    rules_path = rules_dir or get_default_rules_dir()
+
+    try:
+        catalog = load_rules_from_dir(rules_path)
+    except RuleLoadError as err:
+        console.print(f"[bold red]Error al cargar catálogo de reglas:[/bold red] {err}")
+        raise typer.Exit(code=2)
+
+    engine = ScanEngine(catalog=catalog)
+
+    with console.status("[bold cyan]Analizando arquitectura y generando expediente Anexo IV...[/bold cyan]"):
+        report = engine.scan_path(path)
+        generator = AnnexIVGenerator(report, system_name=system_name, version=system_version)
+        dossier_md = generator.generate_markdown_dossier()
+        output.write_text(dossier_md, encoding="utf-8")
+
+    console.print(f"[bold green][OK] Expediente Anexo IV generado con éxito:[/bold green] {output.resolve()}")
 
 if __name__ == "__main__":
     app()
