@@ -1,0 +1,4 @@
+exclude_paths:
+  - "legacy/**"
+  - "tests/**"
+ignore_rules: []
