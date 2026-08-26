@@ -119,11 +119,11 @@ def scan(
         console.print(f"[green]Reporte guardado exitosamente en:[/green] {output}")
     else:
         if format == OutputFormat.JSON:
-            console.print(generate_json_report(report))
+            typer.echo(generate_json_report(report))
         elif format == OutputFormat.SARIF:
-            console.print(generate_sarif_report(report))
+            typer.echo(generate_sarif_report(report))
         elif format == OutputFormat.MARKDOWN:
-            console.print(generate_markdown_report(report, include_evidence=evidence))
+            typer.echo(generate_markdown_report(report, include_evidence=evidence))
         else:
             render_terminal_report(report, include_evidence=evidence, console=console)
 
