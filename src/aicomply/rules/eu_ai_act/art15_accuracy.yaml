@@ -10,3 +10,29 @@
   patterns:
     - type: "ast_call"
       target: "unhandled_model_inference"
+
+- id: "EUAIA-ART15-002"
+  article: "Art. 15"
+  title: "Credencial o clave de API de IA codificada en texto plano (Hardcoded Secret)"
+  severity: "CRITICAL"
+  risk_tier: "high_risk"
+  description: "Detección de claves de API, tokens o credenciales de acceso a proveedores de IA (OpenAI, Anthropic, etc.) codificadas estáticamente en el código fuente."
+  remediation: "Externalizar credenciales a variables de entorno (os.environ.get) o almacenes de secretos seguros (AWS Secrets Manager, Vault)."
+  max_fine: "15M€ o 3% facturación global"
+  confidence: "HIGH"
+  patterns:
+    - type: "regex"
+      target: "(?i)(api_key|openai_api_key|anthropic_api_key|token|auth_token)\\s*=\\s*['\"][a-zA-Z0-9_\\-]{16,}['\"]"
+
+- id: "EUAIA-ART15-003"
+  article: "Art. 15"
+  title: "Interpolación dinámica de prompts no sanitizados (Riesgo de Prompt Injection)"
+  severity: "HIGH"
+  risk_tier: "high_risk"
+  description: "Construcción de prompts o payloads hacia modelos LLM mediante f-strings directos o concatenación sin validación ni sanitización de entradas de usuario."
+  remediation: "Aplicar esquemas de tipado, filtrado de caracteres de inyección y separación formal de roles mediante mensajes estructurados."
+  max_fine: "15M€ o 3% facturación global"
+  confidence: "MEDIUM"
+  patterns:
+    - type: "regex"
+      target: "(?i)(prompt|messages|user_input)\\s*=\\s*f['\"].*\\{.*(raw_input|user_input|user_raw|query|prompt_text).*\\}"

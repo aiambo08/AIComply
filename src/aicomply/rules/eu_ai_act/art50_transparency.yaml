@@ -1,0 +1,12 @@
+- id: "EUAIA-ART50-002"
+  article: "Art. 50"
+  title: "Entrega directa de salidas de IA sin moderación ni validación de contenidos"
+  severity: "MEDIUM"
+  risk_tier: "limited_risk"
+  description: "Retorno directo del contenido generado por el modelo al usuario final sin filtros de toxicidad, moderación semántica ni validación de esquema."
+  remediation: "Interponer filtros de toxicidad, validadores de esquema estructurado o moderación semántica previa a la entrega al usuario final."
+  max_fine: "15M€ o 3% facturación global"
+  confidence: "MEDIUM"
+  patterns:
+    - type: "regex"
+      target: "return\\s+.*\\.choices\\[0\\]\\.message\\.content"

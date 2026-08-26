@@ -1,0 +1,12 @@
+- id: "GDPR-ART32-001"
+  article: "RGPD Art. 32"
+  title: "Registro en texto plano sin cifrar de payloads o respuestas de modelos de IA"
+  severity: "MEDIUM"
+  risk_tier: "high_risk"
+  description: "Volcado de respuestas íntegras de modelos de IA o prompts con datos potencialmente confidenciales en logs estándar (logging.info, print)."
+  remediation: "Registrar únicamente metadatos e identificadores opacos (ID de ejecución, timestamp, tokens consumidos) en lugar del payload completo en texto plano."
+  max_fine: "10M€ o 2% facturación global"
+  confidence: "MEDIUM"
+  patterns:
+    - type: "regex"
+      target: "(?i)(logging\\.(info|debug|warning)|print)\\s*\\(\\s*f?['\"].*(\\{res|\\{response|\\{output|Generated raw output|raw output).*"
