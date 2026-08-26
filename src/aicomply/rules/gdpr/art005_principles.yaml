@@ -10,16 +10,3 @@
   patterns:
     - type: "regex"
       target: "(?i)log_raw_payload\\s*=\\s*True"
-
-- id: "GDPR-ART05-002"
-  article: "RGPD Art. 5(1)(c)"
-  title: "Interpolación potencial de variables PII en payloads de inferencia de IA"
-  severity: "HIGH"
-  risk_tier: "high_risk"
-  description: "Envío de datos personales sensibles (email, DNI, NIF, tarjeta de crédito, salario, historial médico) en payloads hacia APIs externas sin anonimización previa."
-  remediation: "Aplicar anonimización o pseudonimización local mediante modelos de Named Entity Recognition (NER) o enmascaramiento antes de invocar APIs externas."
-  max_fine: "20M€ o 4% facturación global"
-  confidence: "HIGH"
-  patterns:
-    - type: "regex"
-      target: "(?i)f['\"].*\\{.*(user_name|user_email|dni|nif|credit_card|salary|medical_record|iban|passport|ssn).*\\}"

@@ -1,12 +1,56 @@
 - id: "GDPR-ART32-001"
-  article: "RGPD Art. 32"
-  title: "Registro en texto plano sin cifrar de payloads o respuestas de modelos de IA"
-  severity: "MEDIUM"
+  article: "RGPD Art. 32 / EU AI Act Art. 15"
+  title: "Claves de API de proveedores de IA embebidas en texto plano (Hardcoded Secrets)"
+  severity: "CRITICAL"
   risk_tier: "high_risk"
-  description: "Volcado de respuestas íntegras de modelos de IA o prompts con datos potencialmente confidenciales en logs estándar (logging.info, print)."
-  remediation: "Registrar únicamente metadatos e identificadores opacos (ID de ejecución, timestamp, tokens consumidos) en lugar del payload completo en texto plano."
-  max_fine: "10M€ o 2% facturación global"
+  description: "Detección de credenciales de autenticación para servicios LLM (OpenAI, Anthropic, Cohere, HuggingFace) expuestas directamente en el código fuente."
+  remediation: "Extraer las credenciales a variables de entorno (.env) o utilizar un gestor de secretos (AWS Secrets Manager, HashiCorp Vault, Azure Key Vault)."
+  max_fine: "20M€ o 4% facturación global"
+  confidence: "HIGH"
+  patterns:
+    - type: "regex"
+      target: "(?i)(openai|anthropic|cohere|hf)_(api_)?key\\s*=\\s*['\"][a-zA-Z0-9_\\-]{20,}['\"]"
+    - type: "regex"
+      target: "sk-[a-zA-Z0-9_-]{20,}"
+    - type: "regex"
+      target: "sk-ant-[a-zA-Z0-9_-]{20,}"
+
+- id: "GDPR-ART32-002"
+  article: "RGPD Art. 32(1)(a)"
+  title: "Desactivación explícita de verificación TLS/SSL en llamadas a APIs de IA"
+  severity: "HIGH"
+  risk_tier: "high_risk"
+  description: "Deshabilitar la verificación de certificados TLS expone las comunicaciones con modelos remotos a ataques Man-in-the-Middle (MitM) y exfiltración de prompts."
+  remediation: "Eliminar flags como verify=False o NODE_TLS_REJECT_UNAUTHORIZED='0' en clientes HTTP y SDKs de IA."
+  max_fine: "20M€ o 4% facturación global"
+  confidence: "HIGH"
+  patterns:
+    - type: "ast_call"
+      target: "requests.get"
+      match_args:
+        verify: False
+    - type: "ast_call"
+      target: "requests.post"
+      match_args:
+        verify: False
+    - type: "ast_call"
+      target: "httpx.Client"
+      match_args:
+        verify: False
+    - type: "regex"
+      target: "(?i)verify\\s*=\\s*False"
+
+- id: "GDPR-ART32-003"
+  article: "RGPD Art. 32(1)(a)"
+  title: "Invocación de endpoints de inferencia sobre protocolo HTTP no cifrado"
+  severity: "HIGH"
+  risk_tier: "high_risk"
+  description: "El envío de datos de inferencia o prompts a través de conexiones HTTP sin cifrar vulnera el principio de confidencialidad e integridad técnica."
+  remediation: "Configurar todos los endpoints base y URLs de inferencia bajo protocolo seguro HTTPS."
+  max_fine: "20M€ o 4% facturación global"
   confidence: "MEDIUM"
   patterns:
     - type: "regex"
-      target: "(?i)(logging\\.(info|debug|warning)|print)\\s*\\(\\s*f?['\"].*(\\{res|\\{response|\\{output|Generated raw output|raw output).*"
+      target: "(?i)base_url\\s*=\\s*['\"]http://(?!localhost|127\\.0\\.0\\.1)"
+    - type: "regex"
+      target: "(?i)api_base\\s*=\\s*['\"]http://(?!localhost|127\\.0\\.0\\.1)"
