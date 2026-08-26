@@ -5,6 +5,7 @@ Valida la consistencia normativa, unicidad de IDs y compilación de regex de tod
 
 from pathlib import Path
 import re
+import pytest
 from aicomply.cli import get_default_rules_dir
 from aicomply.rules.loader import RuleLoadError, load_rules_from_dir
 from aicomply.schemas import PatternType, Rule
