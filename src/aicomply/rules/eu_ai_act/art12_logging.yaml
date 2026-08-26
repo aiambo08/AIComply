@@ -9,6 +9,10 @@
   confidence: "MEDIUM"
   patterns:
     - type: "ast_absence"
-      target: "openai.ChatCompletion"
+      target: "chat.completions.create"
     - type: "ast_absence"
-      target: "anthropic.Client"
+      target: "anthropic.messages.create"
+    - type: "ast_absence"
+      target: "generativeai.GenerativeModel"
+    - type: "ast_absence"
+      target: "mistral.chat"
