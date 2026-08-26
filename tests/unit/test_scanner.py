@@ -70,3 +70,35 @@ def test_ast_assignment_and_variable_alias(tmp_path: Path):
     assert len(findings) == 1
     assert findings[0].rule_id == "EUAIA-ART13-002"
     assert findings[0].location.start_line == 1
+
+
+def test_inline_suppression(tmp_path: Path):
+    from aicomply.cli import get_default_rules_dir
+    from aicomply.rules.loader import load_rules_from_dir
+    from aicomply.scanner.ast_parser import PythonASTScanner
+
+    rules = load_rules_from_dir(get_default_rules_dir()).rules
+    scanner = PythonASTScanner(rules)
+
+    # Código con supresión inline para Art. 5
+    code = "import fer  # aicomply:ignore EUAIA-ART05-001\n"
+    test_file = tmp_path / "suppressed.py"
+    test_file.write_text(code, encoding="utf-8")
+
+    findings = scanner.scan_file(test_file)
+    assert not any(f.rule_id == "EUAIA-ART05-001" for f in findings)
+
+
+def test_generate_sarif_report(engine: ScanEngine):
+    import json
+    from aicomply.reporter.sarif_reporter import generate_sarif_report
+
+    fixture_path = Path(__file__).parents[1] / "fixtures" / "non_compliant_app.py"
+    report = engine.scan_path(fixture_path)
+    sarif_str = generate_sarif_report(report)
+    sarif_json = json.loads(sarif_str)
+
+    assert sarif_json["version"] == "2.1.0"
+    assert len(sarif_json["runs"]) == 1
+    assert sarif_json["runs"][0]["tool"]["driver"]["name"] == "AIComply"
+    assert len(sarif_json["runs"][0]["results"]) >= 2

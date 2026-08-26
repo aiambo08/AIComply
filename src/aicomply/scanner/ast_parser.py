@@ -150,6 +150,18 @@ class ASTContextVisitor(ast.NodeVisitor):
             return "\n".join(self.source_lines[start_line - 1 : end_line])
         return ""
 
+    def _extract_suppressions(self) -> Dict[int, Set[str]]:
+        """Extrae directivas inline tipo: # aicomply:ignore EUAIA-ART12-001,GDPR-ART05-001."""
+        suppressions: Dict[int, Set[str]] = {}
+        for idx, line in enumerate(self.source_lines, start=1):
+            if "aicomply:ignore" in line:
+                parts = line.split("aicomply:ignore")
+                if len(parts) > 1:
+                    raw_rules = parts[1].strip().split()
+                    rules = {r.strip(",;").upper() for r in raw_rules if r.strip(",;")}
+                    suppressions[idx] = rules
+        return suppressions
+
 
 class PythonASTScanner:
     """Ejecuta reglas basadas en AST sobre archivos Python."""
@@ -172,14 +184,21 @@ class PythonASTScanner:
         visitor = ASTContextVisitor(source, rel_path)
         visitor.visit(tree)
 
+        supressions = visitor._extract_suppressions()
+
         for rule in self.rules:
             for pattern in rule.patterns:
                 matched_findings = self._evaluate_pattern(rule, pattern, visitor, rel_path)
                 for f in matched_findings:
-                    if f.id not in seen_finding_ids:
-                        seen_finding_ids.add(f.id)
-                        findings.append(f)
+                    # Comprobar si la linea del hallazgo tiene supresión inline
+                    line_supressions = supressions.get(f.location.start_line, set())
+                    if rule.id in line_supressions or "ALL" in line_supressions:
+                        continue
 
+                    dedup_key = (f.rule_id, f.location.file_path, f.location.start_line)
+                    if dedup_key not in seen_finding_ids:
+                        seen_finding_ids.add(dedup_key)
+                        findings.append(f)
         return findings
 
     def _evaluate_pattern(
