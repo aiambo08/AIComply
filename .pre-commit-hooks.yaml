@@ -1,0 +1,7 @@
+- id: aicomply
+  name: AIComply EU AI Act & GDPR Scanner
+  description: Deterministic compliance and risk scanner for AI systems
+  entry: aicomply scan . --format terminal
+  language: python
+  types: [python, yaml, json]
+  pass_filenames: false
