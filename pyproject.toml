@@ -25,8 +25,16 @@ dev = [
 [project.scripts]
 aicomply = "aicomply.cli:app"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-aicomply = ["rules/**/*.yaml", "rules/**/*.yml", "rules/*.yaml"]
+"aicomply" = [
+    "rules/**/*.yaml",
+    "rules/**/*.yml",
+    "rules/*.yaml",
+    "rules/*.yml"
+]
