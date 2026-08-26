@@ -6,6 +6,7 @@ Emite resultados de análisis estático compatibles con Github Code Scanning
 import json
 from typing import Any, Dict
 from aicomply.schemas import ScanReport, Severity
+from aicomply._version import __version__
 
 # Mapeo de severidad AIComply -> Nivel SARIF
 SARIF_LEVEL_MAP = {
@@ -38,9 +39,13 @@ def generate_sarif_report(report: ScanReport) -> str:
                 },
             }
 
+        # Calcular ruleIndex: posición de la regla en el array rules_dict
+        rule_index = list(rules_dict.keys()).index(f.rule_id)
+
         # Construir el resultado individual del hallazgo
         results.append({
             "ruleId": f.rule_id,
+            "ruleIndex": rule_index,
             "level": SARIF_LEVEL_MAP.get(f.severity, "warning"),
             "message": {
                 "text": f"[{f.article}] {f.title}. Multa potencial: {f.max_fine}. Remediación: {f.remediation}"
@@ -74,7 +79,7 @@ def generate_sarif_report(report: ScanReport) -> str:
                 "tool": {
                     "driver": {
                         "name": "AIComply",
-                        "version": "0.1.0",
+                        "version": __version__,
                         "informationUri": "https://github.com/aiambo08/AIComply",
                         "rules": list(rules_dict.values()),
                     }

@@ -14,6 +14,7 @@ from rich.text import Text
 
 from aicomply.classifier.risk_tier import classify_overall_risk
 from aicomply.schemas import Finding, RiskTier, ScanReport, Severity
+from aicomply._version import __version__
 
 # Mapeo de estilos y etiquetas por Nivel de Riesgo
 RISK_TIER_STYLES = {
@@ -50,7 +51,7 @@ def render_terminal_report(
     header_table.add_column(justify="left", ratio=3)
     header_table.add_column(justify="right", ratio=2)
     header_table.add_row(
-        f"[bold cyan]AIComply[/bold cyan] [dim]v0.1.0[/dim] - EU AI Act & GDPR Scanner",
+        f"[bold cyan]AIComply[/bold cyan] [dim]v{__version__}[/dim] - EU AI Act & GDPR Scanner",
         f"[dim]Scan ID:[/dim] [bold]{report.scan_id[:12]}[/bold]",
     )
     header_table.add_row(

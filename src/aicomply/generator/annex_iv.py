@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 from aicomply.classifier.risk_tier import classify_overall_risk
 from aicomply.schemas import RiskTier, ScanReport, Severity
+from aicomply._version import __version__
 
 
 class AnnexIVGenerator:
@@ -106,8 +107,8 @@ class AnnexIVGenerator:
         stack = self._extract_detected_stack()
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-        # Hash del expediente documental para trazabilidad
-        doc_hash_seed = f"{self.report.scan_id}|{self.system_name}|{self.version}|{timestamp}"
+        # Hash del expediente documental para trazabilidad (determinista, excluye timestamp)
+        doc_hash_seed = f"{self.report.scan_id}|{self.system_name}|{self.version}"
         dossier_hash = hashlib.sha256(doc_hash_seed.encode("utf-8")).hexdigest()
 
         lines = [
@@ -218,7 +219,7 @@ class AnnexIVGenerator:
         lines.extend([
             "\n---",
             "\n## DECLARACIÓN DE TRAZABILIDAD Y FIRMA DE AUDITORÍA\n",
-            f"El presente dossier ha sido emitido de forma determinista por el motor estático de **AIComply v0.1.0**.",
+            f"El presente dossier ha sido emitido de forma determinista por el motor estático de **AIComply v{__version__}**.",
             f"Cualquier modificación en el código fuente invalidará el hash SHA-256 (`{dossier_hash}`) de este documento.\n",
         ])
 
