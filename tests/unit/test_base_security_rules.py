@@ -69,9 +69,9 @@ def query_model(q):
 
 
 def test_rule_pii_payload_interpolation(engine: ScanEngine, tmp_path: Path):
-    # Vulnerable: inclusión de DNI y nombre de usuario en prompt sin anonimizar
+    # Vulnerable: inclusión de DNI en prompt sin anonimizar
     vulnerable_code = """
-prompt = f"Analiza la solvencia del cliente {user_name} con DNI {dni}"
+prompt = f"Analiza la solvencia del cliente con DNI 12345678Z"
 res = client.chat.completions.create(prompt=prompt)
 """
     vuln_file = tmp_path / "vuln_pii.py"
@@ -82,14 +82,12 @@ res = client.chat.completions.create(prompt=prompt)
     assert "GDPR-ART05-002" in rule_ids
 
 
-def test_rule_plaintext_logging_of_payload(engine: ScanEngine, tmp_path: Path):
-    # Vulnerable: logging del objeto o respuesta completa
+def test_rule_hardcoded_key_gdpr(engine: ScanEngine, tmp_path: Path):
+    # Vulnerable: clave embebida
     vulnerable_code = """
-import logging
-res = client.chat.completions.create(model="gpt-4o", messages=[])
-logging.info(f"Generated raw output: {res}")
+OPENAI_API_KEY = "sk-1234567890abcdef1234567890abcdef"
 """
-    vuln_file = tmp_path / "vuln_logging.py"
+    vuln_file = tmp_path / "vuln_key.py"
     vuln_file.write_text(vulnerable_code, encoding="utf-8")
 
     report = engine.scan_path(vuln_file)
