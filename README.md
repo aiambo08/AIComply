@@ -167,6 +167,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
+      actions: read
       contents: read
 
     steps:
@@ -192,7 +193,7 @@ jobs:
           aicomply scan . --format sarif --output aicomply-results.sarif || true
 
       - name: Upload SARIF report to GitHub Advanced Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: aicomply-results.sarif
