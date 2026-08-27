@@ -104,7 +104,7 @@ def render_terminal_report(
     if not report.findings:
         console.print(
             Panel(
-                "[bold green]✔ CONFORMIDAD TÉCNICA VALIDADA[/bold green]\n"
+                "[bold green][OK] CONFORMIDAD TÉCNICA VALIDADA[/bold green]\n"
                 "[dim]No se detectaron patrones de incumplimiento normativo con el catálogo actual.[/dim]",
                 border_style="green",
                 box=box.ROUNDED,
