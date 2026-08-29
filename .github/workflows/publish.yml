@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/aicomply
+      url: https://pypi.org/p/aicomply-cli
     permissions:
       id-token: write  # Mandatory for PyPI Trusted Publishing
       contents: read

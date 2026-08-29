@@ -2,7 +2,7 @@
 
 **Deterministic EU AI Act & GDPR Compliance Scanner — Ship regulated AI with auditable, cryptographically-signed evidence.**
 
-[![PyPI version](https://img.shields.io/pypi/v/aicomply.svg?color=blue)](https://pypi.org/project/aicomply/)
+[![PyPI version](https://img.shields.io/pypi/v/aicomply-cli.svg?color=blue)](https://pypi.org/project/aicomply-cli/)
 [![CI Status](https://github.com/aiambo08/AIComply/actions/workflows/compliance.yml/badge.svg)](https://github.com/aiambo08/AIComply/actions/workflows/compliance.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
@@ -120,10 +120,10 @@ AI Act enforcement began in **February 2025** (prohibited practices). High-risk 
 
 ```bash
 # Recommended: using uv (fast, reproducible)
-uv pip install aicomply
+uv pip install aicomply-cli
 
 # Standard pip
-pip install aicomply
+pip install aicomply-cli
 
 # Development installation (includes pytest)
 git clone https://github.com/aiambo08/AIComply.git
