@@ -1,0 +1,15 @@
+# Archivo de configuración oficial de AIComply por repositorio (.aicomply.yaml)
+# Define exclusiones de paths, reglas ignoradas y umbrales de fallo para CI/CD.
+
+exclude_paths:
+  - "tests/**"
+  - "docs/**"
+  - "fixtures/**"
+
+ignore_rules: []
+
+# Nivel de riesgo máximo tolerado antes de fallar en pipelines (ej. 'high_risk')
+enforce_risk_tier: "high_risk"
+
+# Directorio de reglas personalizadas (opcional)
+custom_rules_dir: null
