@@ -2,6 +2,7 @@
 
 **Deterministic EU AI Act & GDPR Compliance Scanner — Ship regulated AI with auditable, cryptographically-signed evidence.**
 
+[![PyPI version](https://img.shields.io/pypi/v/aicomply.svg?color=blue)](https://pypi.org/project/aicomply/)
 [![CI Status](https://github.com/aiambo08/AIComply/actions/workflows/compliance.yml/badge.svg)](https://github.com/aiambo08/AIComply/actions/workflows/compliance.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
