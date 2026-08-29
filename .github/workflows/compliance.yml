@@ -9,6 +9,8 @@ on:
 jobs:
   aicomply-audit:
     runs-on: ubuntu-latest
+    env:
+      PYTHONIOENCODING: "utf-8"
     permissions:
       security-events: write
       actions: read
