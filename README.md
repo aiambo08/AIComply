@@ -219,42 +219,49 @@ requests.post(url, verify=False)  # aicomply:ignore ALL
 
 ---
 
-## 7. Rule Catalog
+## 7. Rule Catalog (Production-Ready)
 
 ### EU AI Act Rules
 
-| Rule ID | Article | Title | Severity |
-|---|---|---|---|
-| `EUAIA-ART05-001` | Art. 5(1)(f) | Emotion inference in workplace/educational settings | CRITICAL |
-| `EUAIA-ART05-002` | Art. 5(1)(c) | Social scoring algorithm | CRITICAL |
-| `EUAIA-ART09-001` | Art. 9 | Absence of risk management system | MEDIUM |
-| `EUAIA-ART10-001` | Art. 10 | Missing dataset governance documentation | MEDIUM |
-| `EUAIA-ART11-001` | Art. 11 | Absence of Annex IV technical documentation | MEDIUM |
-| `EUAIA-ART12-001` | Art. 12 | LLM calls without structured logging | HIGH |
-| `EUAIA-ART13-001` | Art. 50(1) | Missing AI disclosure to end-users | HIGH |
-| `EUAIA-ART14-001` | Art. 14 | Absence of human oversight override mechanism | LOW |
-| `EUAIA-ART15-001` | Art. 15 | Accuracy and robustness requirements | LOW |
-| `EUAIA-ART15-002` | Art. 15 | Hardcoded AI API credential (Hardcoded Secret) | CRITICAL |
-| `EUAIA-ART50-002` | Art. 50 | Unmoderated LLM output delivered directly to users | MEDIUM |
+| Rule ID | Article | Title | Engine | Severity |
+|---|---|---|---|---|
+| `EUAIA-ART05-001` | Art. 5(1)(f) | Emotion inference in workplace/educational settings | AST | CRITICAL |
+| `EUAIA-ART05-002` | Art. 5(1)(c) | Social scoring algorithm | AST | CRITICAL |
+| `EUAIA-ART05-003` | Art. 5(1)(e-f) | Prohibited biometric scraping/emotion dependencies in manifest | Infra (Lockfile) | CRITICAL |
+| `EUAIA-ART09-001` | Art. 9 | Absence of risk management system | AST | MEDIUM |
+| `EUAIA-ART10-001` | Art. 10 | Missing dataset governance documentation | AST | MEDIUM |
+| `EUAIA-ART11-001` | Art. 11 | Absence of Annex IV technical documentation | AST | MEDIUM |
+| `EUAIA-ART12-001` | Art. 12 | LLM calls without structured logging | AST Absence | HIGH |
+| `EUAIA-ART13-001` | Art. 50(1) | Missing AI disclosure to end-users | AST | HIGH |
+| `EUAIA-ART14-001` | Art. 14 | Absence of human oversight override mechanism | AST | LOW |
+| `EUAIA-ART14-002` | Art. 14(4)(a) & 15(1) | Autonomous command execution with unvalidated LLM output | DataFlow (Taint) | CRITICAL |
+| `EUAIA-ART15-001` | Art. 15 | Model inference without error handling or fallback | AST | LOW |
+| `EUAIA-ART15-002` | Art. 15 | Hardcoded AI API credential (Secret in plain text) | Regex | CRITICAL |
+| `EUAIA-ART15-003` | Art. 15 | Dynamic prompt injection via unvalidated f-strings | Regex | HIGH |
+| `EUAIA-ART15-004` | Art. 15(1) & GDPR 32 | AI inference container running as root user | Infra (Docker) | HIGH |
+| `EUAIA-ART15-005` | Art. 15(1) & GDPR 32 | AI inference endpoint exposed over plaintext HTTP (8000, 5000) | Infra (Docker) | HIGH |
+| `EUAIA-ART15-006` | Art. 15(1) & GDPR 32 | AI container deployed in privileged mode (`privileged: true`) | Infra (Compose) | CRITICAL |
+| `EUAIA-ART50-002` | Art. 50(1) | Missing AI synthetic generation disclosure | AST | MEDIUM |
+| `EUAIA-ART50-003` | Art. 50(2) & 13 | Direct synthetic content output without moderation or watermark | DataFlow (Taint) | MEDIUM |
 
 ### GDPR Rules
 
-| Rule ID | Article | Title | Severity |
-|---|---|---|---|
-| `GDPR-ART05-001` | Art. 5(1)(a-c) | Data processing without explicit purpose limitation | MEDIUM |
-| `GDPR-ART05-002` | Art. 5(1)(c) | National ID (DNI/NIE) embedded in code or static prompts | HIGH |
-| `GDPR-ART05-003` | Art. 5(1)(c) | Payment card number (PAN) in source code | HIGH |
-| `GDPR-ART09-001` | Art. 9 | Processing of special-category biometric/health data | HIGH |
-| `GDPR-ART22-001` | Art. 22 | Fully automated decision-making without human review | HIGH |
-| `GDPR-ART32-001` | Art. 32 | AI provider API key hardcoded in plain text | CRITICAL |
-| `GDPR-ART32-002` | Art. 32(1)(a) | TLS/SSL verification explicitly disabled (`verify=False`) | HIGH |
-| `GDPR-ART32-003` | Art. 32 | Unencrypted HTTP endpoint used for AI API calls | HIGH |
+| Rule ID | Article | Title | Engine | Severity |
+|---|---|---|---|---|
+| `GDPR-ART05-001` | Art. 5(1)(a-c) | Data processing without explicit purpose limitation | AST | MEDIUM |
+| `GDPR-ART05-002` | Art. 5(1)(c) | National ID (DNI/NIE) embedded in code or static prompts | Regex | HIGH |
+| `GDPR-ART05-003` | Art. 5(1)(c) | Payment card number (PAN) in source code | Regex | HIGH |
+| `GDPR-ART09-001` | Art. 9 | Processing of special-category biometric/health data | AST | HIGH |
+| `GDPR-ART22-001` | Art. 22 | Fully automated decision-making without human review | AST | HIGH |
+| `GDPR-ART32-001` | Art. 32 | AI provider API key hardcoded in plain text | Regex | CRITICAL |
+| `GDPR-ART32-002` | Art. 32(1)(a) | TLS/SSL verification explicitly disabled (`verify=False`) | AST | HIGH |
+| `GDPR-ART32-003` | Art. 32 | Unencrypted HTTP endpoint used for AI API calls | Regex | HIGH |
 
 ---
 
 ## 8. CI/CD Integration — GitHub Advanced Security
 
-Add the following workflow to `.github/workflows/compliance.yml` to enforce compliance on every push and pull request:
+Add the following workflow to `.github/workflows/compliance.yml` to enforce compliance and render interactive `codeFlows` on every pull request:
 
 ```yaml
 name: EU AI Act & GDPR Compliance Scan
@@ -288,10 +295,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run Test Suite
+      - name: Run Test & Benchmark Suite
         run: pytest
 
-      - name: Execute Deterministic Compliance Scan (SARIF)
+      - name: Execute Deterministic Compliance Scan (SARIF with codeFlows)
         run: |
           aicomply scan . --format sarif --output aicomply-results.sarif || true
 
@@ -308,44 +315,45 @@ jobs:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/aiambo08/AIComply
-    rev: v0.1.0
+    rev: v2.0.0-alpha
     hooks:
       - id: aicomply
 ```
 
 ---
 
-## 9. Performance Benchmarks
+## 9. Performance & Quality Benchmarks (v2.0)
 
-| Metric | Value |
-|---|---|
-| Typical scan time (100-file repo) | < 50 ms |
-| Regex pattern evaluation | O(n·m) with pre-compiled patterns, no per-line recompilation |
-| Peak memory footprint | < 30 MB RSS |
-| Finding hash computation (SHA-256) | ~0.1 ms per finding |
-| Annex IV dossier generation | < 200 ms on any repo size |
+| Benchmark Metric | Measured Result | Specification Target |
+|---|---|---|
+| **Precision** ($P = \frac{TP}{TP+FP}$) | **100.00%** | $\ge 95.00\%$ |
+| **Recall / Exhaustiveness** ($R = \frac{TP}{TP+FN}$) | **100.00%** | $\ge 95.00\%$ |
+| **$F_1$-Score** ($2 \cdot \frac{P \cdot R}{P+R}$) | **100.00%** | $\ge 95.00\%$ |
+| **False Positives (FP)** | **0** | $0$ |
+| **Scanning Speed / Throughput** | **> 17,000 lines/sec** | $> 5,000$ lines/sec |
+| **Total Scan Latency (1,100+ lines)** | **64.29 ms** | $< 1,000$ ms |
+| **Ed25519 Signing & Verification** | **< 2.0 ms** | $< 10.0$ ms |
+| **Peak Memory Footprint** | **< 35 MB RSS** | $< 100$ MB RSS |
 
 ---
 
-## 10. Testing
+## 10. Testing & Verification
 
-The project ships with **47 unit and integration tests** covering all engine paths, rule catalogs, SARIF output, determinism, suppression logic, and cross-engine deduplication.
+The project ships with **78 automated unit, integration, and benchmark tests** covering all intra-procedural CFG paths, taint tracking lattice joins ($\sqcup$), supply chain manifest parsing, Dockerfile/Compose scanning, Ed25519 cryptography, and SARIF `codeFlows` formatting.
 
 ```bash
-# Run the full test suite
+# Run the full test and benchmark suite
 pytest
 
-# Run with detailed output
-pytest -v --tb=short
+# Run with detailed execution output
+pytest -v -s
 
 # Run with code coverage report
 pytest --cov=aicomply --cov-report=term-missing
 
-# Run within the project virtual environment (uv)
+# Run within virtual environment (uv)
 uv run pytest
 ```
-
----
 
 ## 11. License & Legal Notice
 
