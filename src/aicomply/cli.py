@@ -60,7 +60,7 @@ def scan(
         OutputFormat.TERMINAL,
         "--format",
         "-f",
-        help="Formato de salida del reporte (terminal, markdown, json).",
+        help="Formato de salida del reporte (terminal, markdown, json, sarif).",
     ),
     articles: Optional[str] = typer.Option(
         None,
@@ -79,13 +79,29 @@ def scan(
         "--evidence",
         help="Incluir identificadores criptográficos SHA-256 por cada hallazgo.",
     ),
+    sign: bool = typer.Option(
+        False,
+        "--sign",
+        help="Firmar asimétricamente el reporte con una clave privada Ed25519.",
+    ),
+    key: Optional[Path] = typer.Option(
+        None,
+        "--key",
+        "-k",
+        help="Ruta a la clave privada Ed25519 (.pem) para firmar.",
+    ),
+    signer_id: Optional[str] = typer.Option(
+        None,
+        "--signer-id",
+        help="Identidad del firmante (ej. 'secops-ci@company.com').",
+    ),
     rules_dir: Optional[Path] = typer.Option(
         None,
         "--rules-dir",
         help="Directorio personalizado de reglas YAML.",
     ),
 ) -> None:
-    """Escanea el código fuente en busca de infracciones del EU AI Act."""
+    """Escanea el código fuente en busca de infracciones del EU AI Act y RGPD."""
     rules_path = rules_dir or get_default_rules_dir()
 
     try:
@@ -106,19 +122,32 @@ def scan(
         console.print(f"[bold red]Error durante la ejecución del escaneo:[/bold red] {exc}")
         raise typer.Exit(code=2)
 
+    # Firma asimétrica Ed25519 si se solicitó
+    signed_bundle = None
+    if sign:
+        if not key or not key.exists():
+            console.print("[bold red]Error: Debe especificar una clave privada existente con --key para firmar.[/bold red]")
+            raise typer.Exit(code=2)
+        from aicomply.evidence.signer import sign_scan_report
+        signed_bundle = sign_scan_report(report, key, signer_identity=signer_id)
+
     # Gestión de salida según formato
     if output:
-        if format == OutputFormat.JSON:
+        if signed_bundle and format == OutputFormat.JSON:
+            content = signed_bundle.model_dump_json(indent=2)
+        elif format == OutputFormat.JSON:
             content = generate_json_report(report)
         elif format == OutputFormat.SARIF:
             content = generate_sarif_report(report)
         else:
             content = generate_markdown_report(report, include_evidence=evidence)
-            
+
         output.write_text(content, encoding="utf-8")
         console.print(f"[green]Reporte guardado exitosamente en:[/green] {output}")
     else:
-        if format == OutputFormat.JSON:
+        if signed_bundle and format == OutputFormat.JSON:
+            typer.echo(signed_bundle.model_dump_json(indent=2))
+        elif format == OutputFormat.JSON:
             typer.echo(generate_json_report(report))
         elif format == OutputFormat.SARIF:
             typer.echo(generate_sarif_report(report))
@@ -126,16 +155,106 @@ def scan(
             typer.echo(generate_markdown_report(report, include_evidence=evidence))
         else:
             render_terminal_report(report, include_evidence=evidence, console=console)
+            if signed_bundle:
+                console.print(f"[bold green][✓] Reporte firmado con Ed25519 (Huella: {signed_bundle.public_key_fingerprint})[/bold green]")
 
     if report.summary.total_findings > 0:
         raise typer.Exit(code=1)
     raise typer.Exit(code=0)
+
+
+@app.command(name="keygen")
+def keygen(
+    out_dir: Path = typer.Option(
+        Path("./pki"),
+        "--out-dir",
+        "-o",
+        help="Directorio donde se generarán las claves.",
+    ),
+    name: str = typer.Option(
+        "aicomply",
+        "--name",
+        "-n",
+        help="Nombre base para los archivos de clave privada (.pem) y pública (.pub).",
+    ),
+) -> None:
+    """Genera un nuevo par de claves asimétricas Ed25519 para firma de evidencias."""
+    from aicomply.evidence.signer import generate_keypair
+    from rich.panel import Panel
+    from rich.table import Table
+
+    try:
+        priv_path, pub_path, fingerprint = generate_keypair(out_dir, name)
+
+        table = Table(show_header=False, box=None)
+        table.add_row("[bold cyan]Clave Privada (PKCS8 PEM):[/bold cyan]", f"[yellow]{priv_path}[/yellow]")
+        table.add_row("[bold cyan]Clave Pública (X.509 PEM):[/bold cyan]", f"[green]{pub_path}[/green]")
+        table.add_row("[bold cyan]Huella Digital (SHA-256):[/bold cyan]", f"[magenta]{fingerprint}[/magenta]")
+
+        panel = Panel(
+            table,
+            title="[bold green]Par de Claves Asimétricas Ed25519 Generado[/bold green]",
+            border_style="green",
+        )
+        console.print(panel)
+    except Exception as exc:
+        console.print(f"[bold red]Error al generar el par de claves:[/bold red] {exc}")
+        raise typer.Exit(code=2)
+
+
+@app.command(name="verify")
+def verify(
+    evidence_file: Path = typer.Argument(
+        ...,
+        help="Ruta al archivo JSON del reporte o paquete de evidencia firmado.",
+        exists=True,
+        resolve_path=True,
+    ),
+    public_key: Path = typer.Option(
+        ...,
+        "--public-key",
+        "-k",
+        help="Ruta a la clave pública Ed25519 (.pub).",
+        exists=True,
+        resolve_path=True,
+    ),
+) -> None:
+    """Verifica matemáticamente la autenticidad e integridad de un reporte firmado (Ed25519)."""
+    from aicomply.evidence.signer import verify_evidence_bundle
+    from rich.panel import Panel
+    from rich.table import Table
+
+    is_valid, msg = verify_evidence_bundle(evidence_file, public_key)
+
+    table = Table(show_header=False, box=None)
+    table.add_row("[bold cyan]Archivo Verificado:[/bold cyan]", f"{evidence_file}")
+    table.add_row("[bold cyan]Clave Pública:[/bold cyan]", f"{public_key}")
+    table.add_row("[bold cyan]Resultado:[/bold cyan]", f"{msg}")
+
+    if is_valid:
+        panel = Panel(
+            table,
+            title="[bold green]VERIFICACIÓN EXITOSA — Evidencia Auténtica e Inalterada[/bold green]",
+            border_style="green",
+        )
+        console.print(panel)
+        raise typer.Exit(code=0)
+    else:
+        panel = Panel(
+            table,
+            title="[bold red]VERIFICACIÓN FALLIDA — Manipulación o Firma Inválida[/bold red]",
+            border_style="red",
+        )
+        console.print(panel)
+        raise typer.Exit(code=1)
+
 
 @app.command(name="assess")
 def assess() -> None:
     """Asistente interactivo guiado para clasificar el nivel de riesgo de un caso de uso."""
     result = run_interactive_assessment(console=console)
     render_assessment_report(result, console=console)
+
 
 @app.command(name="docgen")
 def docgen(
@@ -187,6 +306,7 @@ def docgen(
         output.write_text(dossier_md, encoding="utf-8")
 
     console.print(f"[bold green][OK] Expediente Anexo IV generado con éxito:[/bold green] {output.resolve()}")
+
 
 if __name__ == "__main__":
     app()
