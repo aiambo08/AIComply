@@ -305,7 +305,58 @@ def docgen(
         dossier_md = generator.generate_markdown_dossier()
         output.write_text(dossier_md, encoding="utf-8")
 
-    console.print(f"[bold green][OK] Expediente Anexo IV generado con éxito:[/bold green] {output.resolve()}")
+@app.command(name="ui")
+def ui(
+    path: Path = typer.Argument(
+        Path("."),
+        help="Ruta al repositorio a inspeccionar en la consola visual.",
+        exists=True,
+        resolve_path=True,
+    ),
+    port: int = typer.Option(
+        8080,
+        "--port",
+        "-p",
+        help="Puerto donde se levantará la consola interactiva.",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Dirección IP de escucha para el servidor web local.",
+    ),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="No abrir automáticamente el navegador web predeterminado.",
+    ),
+) -> None:
+    """Inicia la consola visual e interactiva local de cumplimiento y trazabilidad (AIComply Cockpit)."""
+    from aicomply.ui.server import start_ui_server
+    from rich.panel import Panel
+
+    url = f"http://{host}:{port}"
+    panel = Panel(
+        f"[bold cyan]AIComply Interactive Cockpit[/bold cyan]\n"
+        f"Consola activa en: [bold green]{url}[/bold green]\n"
+        f"Repositorio objetivo: [yellow]{path}[/yellow]\n"
+        f"Presione [bold red]Ctrl+C[/bold red] para detener el servidor.",
+        title="[bold green]AIComply UI Server // ONLINE[/bold green]",
+        border_style="green",
+    )
+    console.print(panel)
+
+    server = start_ui_server(
+        target_path=path,
+        host=host,
+        port=port,
+        open_browser=not no_browser,
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Deteniendo el servidor de la consola AIComply...[/yellow]")
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

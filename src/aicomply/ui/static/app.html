@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>AIComply // Regulatory Assurance Console</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "obsidian": "#07090e",
+                        "slate-card": "#0e121a",
+                        "slate-card-hover": "#141a26",
+                        "border-slate": "#1b2333",
+                        "border-slate-bright": "#2d3748",
+                        "cyber-emerald": "#00f59b",
+                        "alert-amber": "#ffb800",
+                        "hazard-crimson": "#ff3355",
+                        "neon-cyan": "#00d2ff",
+                        "neon-violet": "#c4abff",
+                        "text-primary": "#f8fafc",
+                        "text-secondary": "#94a3b8",
+                        "text-muted": "#64748b"
+                    },
+                    fontFamily: {
+                        "headline": ["Hanken Grotesk", "sans-serif"],
+                        "body": ["Hanken Grotesk", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"]
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #07090e; color: #f8fafc; font-family: 'Hanken Grotesk', sans-serif; }
+        .cyber-panel { background-color: #0e121a; border: 1px solid #1b2333; }
+        .cyber-panel:hover { border-color: #2a374f; }
+        .cyber-border-emerald { border: 1px solid #00f59b; box-shadow: 0 0 15px rgba(0, 245, 155, 0.15); }
+        .cyber-border-crimson { border: 1px solid #ff3355; box-shadow: 0 0 15px rgba(255, 51, 85, 0.15); }
+        .cyber-border-amber { border: 1px solid #ffb800; box-shadow: 0 0 15px rgba(255, 184, 0, 0.15); }
+        .data-badge { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 6px; border-radius: 2px; }
+        .grid-pattern {
+            background-image: radial-gradient(rgba(27, 35, 51, 0.6) 1px, transparent 1px);
+            background-size: 16px 16px;
+        }
+        @keyframes pulseAlert {
+            0% { box-shadow: 0 0 0 0 rgba(255, 51, 85, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(255, 51, 85, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 51, 85, 0); }
+        }
+        .pulse-hazard { animation: pulseAlert 2s infinite; }
+        .scrollbar-dark::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-dark::-webkit-scrollbar-track { background: #07090e; }
+        .scrollbar-dark::-webkit-scrollbar-thumb { background: #1b2333; border-radius: 3px; }
+        .scrollbar-dark::-webkit-scrollbar-thumb:hover { background: #2d3748; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-cyber-emerald selection:text-black">
+    <!-- Top Navigation -->
+    <header class="h-16 border-b border-border-slate bg-obsidian/90 backdrop-blur-md flex items-center justify-between px-6 z-50 flex-shrink-0 sticky top-0">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 bg-cyber-emerald rounded-sm shadow-[0_0_8px_#00f59b]"></span>
+                <span class="font-headline font-extrabold text-lg tracking-wider text-text-primary">AICOMPLY</span>
+                <span class="text-text-muted font-light">//</span>
+                <span class="text-xs font-mono text-text-secondary tracking-widest uppercase">REGULATORY ASSURANCE COCKPIT</span>
+            </div>
+            <span class="font-mono text-[10px] uppercase border border-cyber-emerald/40 text-cyber-emerald px-2 py-0.5 bg-cyber-emerald/10 font-bold">
+                ENGINE v2.0.0-ALPHA // ONLINE
+            </span>
+        </div>
+
+        <nav class="flex items-center gap-1 h-full">
+            <button onclick="switchTab('matrix')" id="tab-matrix" class="nav-tab h-full px-4 text-xs font-mono tracking-wider uppercase border-b-2 border-cyber-emerald text-cyber-emerald flex items-center gap-2 transition-all">
+                <span class="material-symbols-outlined text-[16px]">account_tree</span> DataFlow Matrix
+            </button>
+            <button onclick="switchTab('wizard')" id="tab-wizard" class="nav-tab h-full px-4 text-xs font-mono tracking-wider uppercase border-b-2 border-transparent text-text-secondary hover:text-text-primary flex items-center gap-2 transition-all">
+                <span class="material-symbols-outlined text-[16px]">balance</span> Statutory Wizard
+            </button>
+            <button onclick="switchTab('verifier')" id="tab-verifier" class="nav-tab h-full px-4 text-xs font-mono tracking-wider uppercase border-b-2 border-transparent text-text-secondary hover:text-text-primary flex items-center gap-2 transition-all">
+                <span class="material-symbols-outlined text-[16px]">verified_user</span> Ed25519 Verifier
+            </button>
+            <button onclick="switchTab('dossier')" id="tab-dossier" class="nav-tab h-full px-4 text-xs font-mono tracking-wider uppercase border-b-2 border-transparent text-text-secondary hover:text-text-primary flex items-center gap-2 transition-all">
+                <span class="material-symbols-outlined text-[16px]">description</span> Annex IV Dossier
+            </button>
+        </nav>
+
+        <div class="flex items-center gap-3">
+            <div class="hidden lg:flex flex-col items-end">
+                <span class="font-mono text-[11px] text-text-secondary" id="active-repo-label">Target: ./</span>
+                <span class="font-mono text-[10px] text-neon-cyan truncate max-w-[140px]" id="header-scan-id">SHA256:INITIALIZING...</span>
+            </div>
+            <button onclick="triggerScan()" id="btn-scan" class="bg-cyber-emerald hover:bg-[#00d989] text-black font-mono font-bold text-xs px-4 py-2 flex items-center gap-2 transition-all active:scale-95 shadow-[0_0_12px_rgba(0,245,155,0.25)]">
+                <span class="material-symbols-outlined text-[18px]">bolt</span>
+                <span>SCAN REPOSITORY</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 flex flex-col p-6 gap-5 overflow-hidden">
+
+        <!-- Executive Metrics Row -->
+        <section class="grid grid-cols-1 md:grid-cols-4 gap-4 flex-shrink-0">
+            <!-- Metric 1: Prohibited -->
+            <div class="cyber-panel p-4 flex flex-col justify-between relative overflow-hidden" id="card-metric-prohibited">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-mono text-xs uppercase tracking-wider text-text-secondary">Prohibited AI (Art. 5)</span>
+                    <span class="w-2.5 h-2.5 rounded-full bg-border-slate" id="status-indicator-prohibited"></span>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="font-mono text-2xl font-bold" id="count-prohibited">0</span>
+                    <span class="text-xs text-text-secondary uppercase font-mono">Violations</span>
+                </div>
+                <span class="text-[11px] text-text-muted mt-1">Biometrics, emotion inference, scoring</span>
+            </div>
+
+            <!-- Metric 2: High Risk -->
+            <div class="cyber-panel p-4 flex flex-col justify-between relative overflow-hidden" id="card-metric-highrisk">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-mono text-xs uppercase tracking-wider text-alert-amber">High-Risk (Art. 6/14/15)</span>
+                    <span class="w-2.5 h-2.5 rounded-full bg-alert-amber shadow-[0_0_8px_#ffb800]" id="status-indicator-highrisk"></span>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="font-mono text-2xl font-bold text-alert-amber" id="count-highrisk">0</span>
+                    <span class="text-xs text-text-secondary uppercase font-mono">Findings</span>
+                </div>
+                <span class="text-[11px] text-text-muted mt-1">Human oversight, unvalidated sinks, TLS</span>
+            </div>
+
+            <!-- Metric 3: Fine Exposure -->
+            <div class="cyber-panel p-4 flex flex-col justify-between relative overflow-hidden">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-mono text-xs uppercase tracking-wider text-text-secondary">Statutory Fine Exposure</span>
+                    <span class="material-symbols-outlined text-hazard-crimson text-[18px]">gavel</span>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="font-mono text-xl font-bold text-hazard-crimson" id="exposure-amount">€0 / 0%</span>
+                </div>
+                <span class="text-[11px] text-text-muted mt-1" id="exposure-desc">Max statutory sanction under EU AI Act</span>
+            </div>
+
+            <!-- Metric 4: Cryptographic Assurance -->
+            <div class="cyber-panel p-4 flex flex-col justify-between relative overflow-hidden" id="card-metric-signer">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-mono text-xs uppercase tracking-wider text-text-secondary">Asymmetric Signature</span>
+                    <span class="font-mono text-[10px] text-cyber-emerald border border-cyber-emerald/40 px-1.5 py-0.5 bg-cyber-emerald/10 font-bold" id="crypto-badge">
+                        READY (Ed25519)
+                    </span>
+                </div>
+                <div class="font-mono text-xs text-neon-cyan truncate" id="scan-fingerprint-display">
+                    SHA256: SCAN NOT INITIALIZED
+                </div>
+                <span class="text-[11px] text-text-muted mt-1">Deterministic hash & RFC 8032 signer</span>
+            </div>
+        </section>
+
+        <!-- TAB 1: DATAFLOW MATRIX & CODEFLOWS -->
+        <section id="view-matrix" class="flex-1 flex gap-5 overflow-hidden min-h-[480px]">
+            <!-- Left 60%: Interactive Control Flow & Taint Graph -->
+            <div class="w-[58%] cyber-panel flex flex-col overflow-hidden relative">
+                <div class="p-3.5 border-b border-border-slate flex justify-between items-center bg-[#0a0e16]">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-cyber-emerald text-[18px]">hub</span>
+                        <h2 class="font-headline text-sm font-bold tracking-wide uppercase">Intra-Procedural Taint Tracer (CFG Graph)</h2>
+                    </div>
+                    <span class="font-mono text-[11px] text-text-muted">Pessimistic Join Lattice: TAINTED_UNSAFE ⊔ SANITIZED</span>
+                </div>
+
+                <div class="flex-1 grid-pattern p-6 relative flex flex-col justify-center items-center overflow-y-auto scrollbar-dark" id="cfg-canvas">
+                    <!-- Graph Flow Representation -->
+                    <div class="w-full max-w-xl flex flex-col gap-6 items-center z-10" id="cfg-nodes-container">
+                        <!-- Node 1: Source -->
+                        <div class="w-full bg-[#181124] border border-[#7c3aed] p-3 shadow-[0_0_20px_rgba(124,58,237,0.2)] rounded-sm cursor-pointer hover:border-neon-violet transition-all" onclick="selectFlowStep(0)">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="data-badge bg-[#7c3aed]/30 text-neon-violet border border-[#7c3aed]">[1] GENERATIVE SOURCE (Art. 13/50)</span>
+                                <span class="font-mono text-[11px] text-text-muted">L13</span>
+                            </div>
+                            <div class="font-mono text-xs text-text-primary font-semibold" id="cfg-source-code">
+                                openai.chat.completions.create(model="gpt-4", ...)
+                            </div>
+                        </div>
+
+                        <!-- Connector Down -->
+                        <div class="flex items-center justify-center -my-3">
+                            <div class="w-[2px] h-6 bg-border-slate relative">
+                                <div class="absolute inset-0 bg-neon-violet/70 animate-pulse"></div>
+                            </div>
+                        </div>
+
+                        <!-- Node 2: Variable Propagation -->
+                        <div class="w-full bg-[#201518] border border-[#991b1b] p-3 shadow-[0_0_15px_rgba(153,27,27,0.2)] rounded-sm cursor-pointer hover:border-hazard-crimson transition-all" onclick="selectFlowStep(1)">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="data-badge bg-[#991b1b]/30 text-red-300 border border-[#991b1b]">[2] TAINTED VARIABLE PROPAGATION</span>
+                                <span class="font-mono text-[11px] text-text-muted">L16</span>
+                            </div>
+                            <div class="font-mono text-xs text-text-primary" id="cfg-prop-code">
+                                cmd_payload = response.choices[0].message.content
+                            </div>
+                        </div>
+
+                        <!-- Connector Down Split -->
+                        <div class="flex items-center justify-center -my-3">
+                            <div class="w-[2px] h-6 bg-border-slate relative">
+                                <div class="absolute inset-0 bg-hazard-crimson/80"></div>
+                            </div>
+                        </div>
+
+                        <!-- Node 3: Pessimistic Join ⊔ / Gate -->
+                        <div class="w-full bg-[#121620] border border-border-slate-bright p-3 rounded-sm cursor-pointer hover:border-alert-amber transition-all" onclick="selectFlowStep(2)">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="data-badge bg-border-slate text-text-secondary border border-border-slate-bright">[3] CONTROL FLOW BIFURCATION (⊔)</span>
+                                <span class="font-mono text-[11px] text-text-muted">L18</span>
+                            </div>
+                            <div class="font-mono text-xs text-text-secondary" id="cfg-bifurcation-code">
+                                if config.get("auto_exec"): [UNSAFE PATH TAKEN]
+                            </div>
+                        </div>
+
+                        <!-- Connector Down -->
+                        <div class="flex items-center justify-center -my-3">
+                            <div class="w-[2px] h-6 bg-hazard-crimson relative">
+                                <div class="absolute inset-0 bg-hazard-crimson shadow-[0_0_8px_#ff3355]"></div>
+                            </div>
+                        </div>
+
+                        <!-- Node 4: Critical Execution Sink -->
+                        <div class="w-full bg-[#2a0d11] border border-hazard-crimson p-3.5 pulse-hazard rounded-sm cursor-pointer hover:bg-[#381016] transition-all" onclick="selectFlowStep(3)">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="data-badge bg-hazard-crimson text-black font-bold">[4] CRITICAL EXECUTION SINK (Art. 14 Violation)</span>
+                                <span class="font-mono text-[11px] text-hazard-crimson font-bold">L19</span>
+                            </div>
+                            <div class="font-mono text-xs text-red-200 font-bold" id="cfg-sink-code">
+                                subprocess.run(cmd_payload, shell=True)
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-3 border-t border-border-slate bg-[#0a0e16] flex justify-between items-center text-xs font-mono">
+                    <span class="text-text-muted">Finding: EUAIA-ART14-002</span>
+                    <span class="text-hazard-crimson font-bold">REMEDIATION: Insert Human Authorization Gate or schema sanitizer</span>
+                </div>
+            </div>
+
+            <!-- Right 40%: Active Findings Feed & CodeFlows -->
+            <div class="w-[42%] flex flex-col gap-4 overflow-hidden">
+                <div class="cyber-panel flex-1 flex flex-col overflow-hidden">
+                    <div class="p-3.5 border-b border-border-slate flex justify-between items-center bg-[#0a0e16]">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-hazard-crimson text-[18px]">warning</span>
+                            <h3 class="font-headline text-sm font-bold uppercase">Active Findings (<span id="findings-count-badge">0</span>)</h3>
+                        </div>
+                        <span class="font-mono text-[11px] text-text-muted">SARIF v2.1.0 Compatible</span>
+                    </div>
+
+                    <!-- Findings List (Top Half) -->
+                    <div class="h-44 border-b border-border-slate overflow-y-auto scrollbar-dark divide-y divide-border-slate" id="findings-list-container">
+                        <!-- Finding items injected dynamically -->
+                        <div class="p-3 text-xs text-text-muted font-mono text-center">Loading findings...</div>
+                    </div>
+
+                    <!-- Active Code Snippet Inspector (Bottom Half) -->
+                    <div class="flex-1 flex flex-col bg-obsidian overflow-hidden">
+                        <div class="px-3.5 py-2 border-b border-border-slate bg-[#080b11] flex justify-between items-center text-xs font-mono">
+                            <span class="text-text-secondary truncate" id="code-viewer-filename">File: --</span>
+                            <span class="text-neon-cyan" id="code-viewer-lines">Lines: --</span>
+                        </div>
+                        <div class="flex-1 p-3 font-mono text-[11px] overflow-y-auto scrollbar-dark leading-relaxed" id="code-viewer-content">
+                            <pre class="text-text-muted">// Select a finding to inspect execution flow & source lines</pre>
+                        </div>
+                    </div>
+
+                    <!-- Action Controls -->
+                    <div class="p-3 border-t border-border-slate bg-[#0a0e16] flex gap-2">
+                        <button onclick="copyRemediation()" class="flex-1 bg-border-slate hover:bg-border-slate-bright text-text-primary text-xs font-mono py-2 transition-all flex items-center justify-center gap-1.5">
+                            <span class="material-symbols-outlined text-[15px]">content_copy</span> Copy Suppression
+                        </button>
+                        <button onclick="exportSARIF()" class="flex-1 bg-border-slate hover:bg-border-slate-bright text-cyber-emerald text-xs font-mono py-2 transition-all flex items-center justify-center gap-1.5">
+                            <span class="material-symbols-outlined text-[15px]">download</span> Export SARIF
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: STATUTORY RISK WIZARD -->
+        <section id="view-wizard" class="flex-1 cyber-panel flex flex-col overflow-hidden hidden">
+            <div class="p-4 border-b border-border-slate flex justify-between items-center bg-[#0a0e16]">
+                <div>
+                    <h2 class="font-headline text-base font-bold uppercase text-cyber-emerald">EU AI Act Interactive Decision Tree (§ Art. 5, 6, 50)</h2>
+                    <p class="text-xs text-text-muted mt-0.5">Determine the regulatory risk tier and mandatory statutory obligations of your AI architecture</p>
+                </div>
+                <span class="font-mono text-xs px-2.5 py-1 bg-border-slate text-text-secondary border border-border-slate-bright">REGULATION 2024/1689</span>
+            </div>
+
+            <div class="flex-1 p-8 grid grid-cols-1 md:grid-cols-2 gap-8 overflow-y-auto scrollbar-dark">
+                <!-- Left: Interactive Form -->
+                <div class="flex flex-col gap-5">
+                    <div class="flex flex-col gap-2">
+                        <label class="font-mono text-xs uppercase text-text-secondary">1. System / Project Name</label>
+                        <input type="text" id="wizard-sys-name" value="Autonomous-Fintech-Agent" class="bg-obsidian border border-border-slate px-3.5 py-2 font-mono text-xs text-text-primary focus:border-cyber-emerald focus:outline-none"/>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="font-mono text-xs uppercase text-text-secondary">2. Prohibited AI Practices (Art. 5(1))</label>
+                        <select id="wizard-q1" class="bg-obsidian border border-border-slate px-3.5 py-2 font-mono text-xs text-text-primary focus:border-cyber-emerald focus:outline-none">
+                            <option value="none">None of these practices apply</option>
+                            <option value="social_scoring">Social scoring or socio-economic profiling (Art. 5(1)(c))</option>
+                            <option value="emotion_workplace">Emotion inference in workplace or educational settings (Art. 5(1)(f))</option>
+                            <option value="biometric_scraping">Untargeted scraping of facial images from CCTV/Internet (Art. 5(1)(e))</option>
+                            <option value="subliminal_manipulation">Subliminal or manipulative techniques causing harm (Art. 5(1)(a))</option>
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="font-mono text-xs uppercase text-text-secondary">3. High-Risk System Critical Sectors (Annex III)</label>
+                        <select id="wizard-q2" class="bg-obsidian border border-border-slate px-3.5 py-2 font-mono text-xs text-text-primary focus:border-cyber-emerald focus:outline-none">
+                            <option value="none">No Annex III critical sectors involved</option>
+                            <option value="recruitment">Recruitment, HR, screening, or worker evaluation (Annex III.4)</option>
+                            <option value="credit_scoring">Credit scoring or risk assessment of individuals (Annex III.5)</option>
+                            <option value="critical_infra">Safety component of critical infrastructure (Annex III.2)</option>
+                            <option value="biometric_id">Remote biometric identification / categorization (Annex III.1)</option>
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="font-mono text-xs uppercase text-text-secondary">4. Generative AI / Synthetic Media Output (Art. 50)</label>
+                        <select id="wizard-q3" class="bg-obsidian border border-border-slate px-3.5 py-2 font-mono text-xs text-text-primary focus:border-cyber-emerald focus:outline-none">
+                            <option value="text_gen">Generates synthetic text, code, or images directly to users (Art. 50(2))</option>
+                            <option value="chat_interaction">Direct conversational interaction with human users (Art. 50(1))</option>
+                            <option value="none">Internal non-generative processing only</option>
+                        </select>
+                    </div>
+
+                    <button onclick="evaluateStatutoryAssessment()" class="mt-2 bg-cyber-emerald hover:bg-[#00d989] text-black font-mono font-bold text-xs py-3 flex items-center justify-center gap-2 transition-all">
+                        <span class="material-symbols-outlined text-[18px]">calculate</span>
+                        EVALUATE STATUTORY CLASSIFICATION
+                    </button>
+                </div>
+
+                <!-- Right: Statutory Assessment Output -->
+                <div class="bg-obsidian border border-border-slate p-6 flex flex-col justify-between" id="wizard-results-panel">
+                    <div class="flex flex-col gap-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <span class="font-mono text-[11px] uppercase text-text-muted">Statutory Classification</span>
+                                <h3 class="font-headline text-xl font-bold text-alert-amber mt-1" id="wizard-tier-title">HIGH-RISK AI SYSTEM (§ Art. 6 & Annex III)</h3>
+                            </div>
+                            <span class="font-mono text-xs px-2.5 py-1 bg-alert-amber/10 border border-alert-amber text-alert-amber font-bold" id="wizard-tier-badge">HIGH RISK</span>
+                        </div>
+
+                        <hr class="border-border-slate"/>
+
+                        <div class="flex flex-col gap-2">
+                            <span class="font-mono text-xs uppercase text-text-secondary font-bold">Mandatory Binding Obligations:</span>
+                            <ul class="text-xs text-text-secondary space-y-2 list-disc list-inside" id="wizard-obligations-list">
+                                <li><strong>Art. 9 (Risk Management):</strong> Implement continuous testing & mitigations.</li>
+                                <li><strong>Art. 11 & Annex IV:</strong> Maintain detailed Technical Documentation dossier.</li>
+                                <li><strong>Art. 12 (Automatic Logging):</strong> Record all model inferences and prompt traces.</li>
+                                <li><strong>Art. 14 (Human Oversight):</strong> Implement mandatory human authorization gate before executing actions.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 pt-4 border-t border-border-slate flex justify-between items-center">
+                        <span class="font-mono text-[11px] text-text-muted">Enforcement Timeline: Aug 2, 2026</span>
+                        <button onclick="switchTab('dossier')" class="text-xs font-mono text-cyber-emerald hover:underline flex items-center gap-1">
+                            Generate Annex IV Dossier <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: ED25519 EVIDENCE VERIFIER -->
+        <section id="view-verifier" class="flex-1 cyber-panel flex flex-col overflow-hidden hidden">
+            <div class="p-4 border-b border-border-slate flex justify-between items-center bg-[#0a0e16]">
+                <div>
+                    <h2 class="font-headline text-base font-bold uppercase text-neon-cyan">Offline Ed25519 Asymmetric Evidence Verifier</h2>
+                    <p class="text-xs text-text-muted mt-0.5">Independent mathematical verification of signed compliance reports (*.evidence.json)</p>
+                </div>
+                <span class="font-mono text-xs px-2.5 py-1 bg-neon-cyan/10 border border-neon-cyan text-neon-cyan font-bold">RFC 8032 VERIFIER</span>
+            </div>
+
+            <div class="flex-1 p-8 grid grid-cols-1 md:grid-cols-2 gap-8 overflow-y-auto scrollbar-dark">
+                <!-- Left: Drag & Drop Dropzone -->
+                <div class="flex flex-col gap-4">
+                    <div id="dropzone" class="border-2 border-dashed border-border-slate-bright hover:border-cyber-emerald p-8 flex flex-col items-center justify-center gap-3 bg-obsidian transition-all cursor-pointer min-h-[220px]" onclick="document.getElementById('evidence-file-input').click()">
+                        <span class="material-symbols-outlined text-text-muted text-[42px]">file_upload</span>
+                        <div class="text-center">
+                            <span class="font-mono text-xs text-text-primary block font-bold">DRAG & DROP EVIDENCE BUNDLE</span>
+                            <span class="font-mono text-[11px] text-text-muted">*.evidence.json or select file</span>
+                        </div>
+                        <input type="file" id="evidence-file-input" class="hidden" accept=".json" onchange="handleEvidenceFile(this.files[0])"/>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="font-mono text-xs uppercase text-text-secondary">Ed25519 Public Key (PEM or inline)</label>
+                        <textarea id="verifier-public-key" rows="4" placeholder="-----BEGIN PUBLIC KEY-----&#10;MCowBQYDK2VwAyEA...&#10;-----END PUBLIC KEY-----" class="bg-obsidian border border-border-slate p-3 font-mono text-[11px] text-text-primary focus:border-neon-cyan focus:outline-none scrollbar-dark"></textarea>
+                    </div>
+
+                    <button onclick="executeVerification()" class="bg-neon-cyan hover:bg-[#00bde6] text-black font-mono font-bold text-xs py-3 flex items-center justify-center gap-2 transition-all">
+                        <span class="material-symbols-outlined text-[18px]">lock_open</span>
+                        VERIFY CRYPTOGRAPHIC AUTHENTICITY
+                    </button>
+                </div>
+
+                <!-- Right: Verification Result -->
+                <div class="bg-obsidian border border-border-slate p-6 flex flex-col justify-between" id="verifier-result-panel">
+                    <div class="flex flex-col gap-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <span class="font-mono text-[11px] uppercase text-text-muted">Cryptographic Integrity Status</span>
+                                <h3 class="font-headline text-xl font-bold text-cyber-emerald mt-1" id="verifier-status-text">READY FOR VERIFICATION</h3>
+                            </div>
+                            <span class="font-mono text-xs px-2.5 py-1 bg-cyber-emerald/10 border border-cyber-emerald text-cyber-emerald font-bold" id="verifier-status-badge">STANDBY</span>
+                        </div>
+
+                        <hr class="border-border-slate"/>
+
+                        <div class="flex flex-col gap-3 font-mono text-xs">
+                            <div class="flex flex-col gap-1">
+                                <span class="text-text-muted uppercase text-[10px]">Signer ID:</span>
+                                <span class="text-text-primary" id="v-signer-id">--</span>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <span class="text-text-muted uppercase text-[10px]">Signed Timestamp (UTC):</span>
+                                <span class="text-text-primary" id="v-timestamp">--</span>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <span class="text-text-muted uppercase text-[10px]">Scan ID Hash:</span>
+                                <span class="text-neon-cyan truncate" id="v-scan-id">--</span>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <span class="text-text-muted uppercase text-[10px]">Public Key Fingerprint (SHA-256):</span>
+                                <span class="text-text-secondary truncate" id="v-key-fingerprint">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 p-3 bg-[#0a0e16] border border-border-slate text-[11px] font-mono text-text-muted flex items-center gap-2">
+                        <span class="material-symbols-outlined text-cyber-emerald text-[16px]">verified</span>
+                        Non-repudiable legal evidence under EU AI Act Art. 11.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 4: ANNEX IV DOSSIER EXPLORER -->
+        <section id="view-dossier" class="flex-1 cyber-panel flex flex-col overflow-hidden hidden">
+            <div class="p-4 border-b border-border-slate flex justify-between items-center bg-[#0a0e16]">
+                <div>
+                    <h2 class="font-headline text-base font-bold uppercase text-text-primary">Annex IV Technical Documentation Dossier (§ Art. 11)</h2>
+                    <p class="text-xs text-text-muted mt-0.5">Automated compilation of system specifications, governance, and compliance matrix</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="downloadDossierMD()" class="bg-border-slate hover:bg-border-slate-bright text-text-primary text-xs font-mono px-3 py-1.5 flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[15px]">download</span> Markdown
+                    </button>
+                    <button onclick="window.print()" class="bg-cyber-emerald text-black text-xs font-mono font-bold px-3 py-1.5 flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[15px]">print</span> Print / PDF
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 p-8 bg-obsidian overflow-y-auto scrollbar-dark font-mono text-xs leading-relaxed" id="dossier-preview-content">
+                <!-- Injected via /api/docgen -->
+                <pre class="text-text-secondary">Generating Annex IV Dossier...</pre>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Client Logic -->
+    <script>
+        let currentScanData = null;
+        let selectedFindingIndex = 0;
+
+        function switchTab(tabId) {
+            ['matrix', 'wizard', 'verifier', 'dossier'].forEach(id => {
+                const view = document.getElementById('view-' + id);
+                const tab = document.getElementById('tab-' + id);
+                if (id === tabId) {
+                    view.classList.remove('hidden');
+                    tab.classList.add('border-cyber-emerald', 'text-cyber-emerald');
+                    tab.classList.remove('border-transparent', 'text-text-secondary');
+                } else {
+                    view.classList.add('hidden');
+                    tab.classList.remove('border-cyber-emerald', 'text-cyber-emerald');
+                    tab.classList.add('border-transparent', 'text-text-secondary');
+                }
+            });
+
+            if (tabId === 'dossier') {
+                loadDossier();
+            }
+        }
+
+        async function triggerScan() {
+            const btn = document.getElementById('btn-scan');
+            btn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">refresh</span> <span>SCANNING...</span>`;
+            
+            try {
+                const res = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: '.' })
+                });
+                const data = await res.json();
+                currentScanData = data;
+                renderScanResults(data);
+            } catch (err) {
+                console.error("Scan error:", err);
+            } finally {
+                btn.innerHTML = `<span class="material-symbols-outlined text-[18px]">bolt</span> <span>SCAN REPOSITORY</span>`;
+            }
+        }
+
+        function renderScanResults(data) {
+            document.getElementById('header-scan-id').innerText = data.scan_id ? data.scan_id.substring(0, 18) + '...' : 'CLEAN';
+            document.getElementById('scan-fingerprint-display').innerText = data.scan_id || 'SHA256:0000000000000000';
+            
+            const summary = data.summary || { prohibited_count: 0, high_risk_count: 0, total_findings: 0 };
+            document.getElementById('count-prohibited').innerText = summary.prohibited_count;
+            document.getElementById('count-highrisk').innerText = summary.high_risk_count;
+            document.getElementById('findings-count-badge').innerText = (data.findings || []).length;
+
+            // Exposure calculation
+            if (summary.prohibited_count > 0) {
+                document.getElementById('exposure-amount').innerText = '€35M / 7%';
+                document.getElementById('exposure-desc').innerText = 'Prohibited AI practice violation (Art. 5)';
+                document.getElementById('status-indicator-prohibited').className = 'w-2.5 h-2.5 rounded-full bg-hazard-crimson shadow-[0_0_8px_#ff3355]';
+            } else if (summary.high_risk_count > 0) {
+                document.getElementById('exposure-amount').innerText = '€15M / 3%';
+                document.getElementById('exposure-desc').innerText = 'High-Risk compliance violation (Art. 6/14/15)';
+                document.getElementById('status-indicator-highrisk').className = 'w-2.5 h-2.5 rounded-full bg-alert-amber shadow-[0_0_8px_#ffb800]';
+            } else {
+                document.getElementById('exposure-amount').innerText = '€0 (Compliant)';
+                document.getElementById('exposure-desc').innerText = 'Zero statutory liability detected';
+                document.getElementById('status-indicator-highrisk').className = 'w-2.5 h-2.5 rounded-full bg-cyber-emerald';
+            }
+
+            renderFindingsList(data.findings || []);
+        }
+
+        function renderFindingsList(findings) {
+            const container = document.getElementById('findings-list-container');
+            if (findings.length === 0) {
+                container.innerHTML = `<div class="p-6 text-center text-cyber-emerald font-mono text-xs">✓ REPOSITORY 100% COMPLIANT — ZERO FINDINGS DETECTED</div>`;
+                renderCodeSnippet(null);
+                return;
+            }
+
+            container.innerHTML = findings.map((f, idx) => {
+                const isCrit = f.severity === 'CRITICAL';
+                const isHigh = f.severity === 'HIGH';
+                const badgeColor = isCrit ? 'bg-hazard-crimson/20 border-hazard-crimson text-red-300' : (isHigh ? 'bg-alert-amber/20 border-alert-amber text-amber-300' : 'bg-border-slate border-border-slate-bright text-text-secondary');
+                
+                return `
+                    <div onclick="selectFinding(${idx})" class="p-3 cursor-pointer hover:bg-slate-card-hover transition-all ${idx === selectedFindingIndex ? 'bg-[#151c28] border-l-2 border-cyber-emerald' : ''}">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="data-badge border ${badgeColor}">${f.rule_id}</span>
+                            <span class="font-mono text-[10px] text-text-muted">${f.file_path}:${f.start_line}</span>
+                        </div>
+                        <div class="text-xs font-semibold text-text-primary truncate">${f.title}</div>
+                    </div>
+                `;
+            }).join('');
+
+            selectFinding(selectedFindingIndex < findings.length ? selectedFindingIndex : 0);
+        }
+
+        function selectFinding(idx) {
+            selectedFindingIndex = idx;
+            const findings = (currentScanData && currentScanData.findings) || [];
+            if (idx >= findings.length) return;
+            const finding = findings[idx];
+
+            document.querySelectorAll('#findings-list-container > div').forEach((el, i) => {
+                if (i === idx) {
+                    el.className = 'p-3 cursor-pointer bg-[#151c28] border-l-2 border-cyber-emerald';
+                } else {
+                    el.className = 'p-3 cursor-pointer hover:bg-slate-card-hover transition-all';
+                }
+            });
+
+            renderCodeSnippet(finding);
+        }
+
+        function renderCodeSnippet(finding) {
+            if (!finding) {
+                document.getElementById('code-viewer-filename').innerText = "File: --";
+                document.getElementById('code-viewer-lines').innerText = "Lines: --";
+                document.getElementById('code-viewer-content').innerHTML = `<pre class="text-cyber-emerald font-mono text-xs">// Repository is fully compliant.</pre>`;
+                return;
+            }
+
+            document.getElementById('code-viewer-filename').innerText = `File: ${finding.file_path}`;
+            document.getElementById('code-viewer-lines').innerText = `Line: ${finding.start_line}-${finding.end_line}`;
+
+            const lines = (finding.code_snippet || "").split('\n');
+            const codeHtml = lines.map((line, lIdx) => {
+                const lineNum = finding.start_line + lIdx;
+                const isHighlight = lIdx === 0;
+                return `<div class="flex ${isHighlight ? 'bg-hazard-crimson/20 text-red-200 font-bold border-l-2 border-hazard-crimson pl-1' : 'text-text-secondary'}">
+                    <span class="w-8 text-right mr-3 text-text-muted select-none">${lineNum}</span>
+                    <span class="truncate">${escapeHtml(line)}</span>
+                </div>`;
+            }).join('');
+
+            document.getElementById('code-viewer-content').innerHTML = codeHtml;
+
+            // If finding has flow steps, update CFG nodes
+            if (finding.flow_steps && finding.flow_steps.length > 0) {
+                const s = finding.flow_steps[0];
+                document.getElementById('cfg-source-code').innerText = s.code_snippet || "openai.chat.completions.create()";
+            }
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        function selectFlowStep(stepIdx) {
+            console.log("Selected step", stepIdx);
+        }
+
+        function copyRemediation() {
+            const findings = (currentScanData && currentScanData.findings) || [];
+            if (findings.length === 0) return;
+            const f = findings[selectedFindingIndex];
+            const text = `# aicomply:ignore ${f.rule_id}`;
+            navigator.clipboard.writeText(text);
+            alert(`Copiado al portapapeles: ${text}`);
+        }
+
+        function exportSARIF() {
+            window.open('/api/scan?format=sarif', '_blank');
+        }
+
+        async function evaluateStatutoryAssessment() {
+            const sysName = document.getElementById('wizard-sys-name').value;
+            const q1 = document.getElementById('wizard-q1').value;
+            const q2 = document.getElementById('wizard-q2').value;
+            const q3 = document.getElementById('wizard-q3').value;
+
+            const res = await fetch('/api/assess', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: sysName, q1, q2, q3 })
+            });
+            const data = await res.json();
+            
+            document.getElementById('wizard-tier-title').innerText = data.title;
+            document.getElementById('wizard-tier-badge').innerText = data.tier_badge;
+            document.getElementById('wizard-tier-badge').className = `font-mono text-xs px-2.5 py-1 border font-bold ${data.badge_class}`;
+            
+            const listHtml = data.obligations.map(o => `<li><strong>${o.article}:</strong> ${o.desc}</li>`).join('');
+            document.getElementById('wizard-obligations-list').innerHTML = listHtml;
+        }
+
+        async function handleEvidenceFile(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const bundle = JSON.parse(e.target.result);
+                    window.uploadedBundle = bundle;
+                    document.getElementById('dropzone').innerHTML = `
+                        <span class="material-symbols-outlined text-cyber-emerald text-[42px]">check_circle</span>
+                        <span class="font-mono text-xs text-cyber-emerald font-bold">${file.name} (Loaded)</span>
+                        <span class="font-mono text-[10px] text-text-muted">Signer: ${bundle.signer_id || 'Unknown'}</span>
+                    `;
+                } catch (err) {
+                    alert("Invalid JSON evidence bundle");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        async function executeVerification() {
+            if (!window.uploadedBundle) {
+                alert("Por favor arrastra o selecciona primero un archivo *.evidence.json");
+                return;
+            }
+            const pubKey = document.getElementById('verifier-public-key').value;
+            
+            const res = await fetch('/api/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bundle: window.uploadedBundle, public_key: pubKey })
+            });
+            const data = await res.json();
+
+            if (data.valid) {
+                document.getElementById('verifier-status-text').innerText = "SIGNATURE VERIFIED (100% AUTHENTIC)";
+                document.getElementById('verifier-status-text').className = "font-headline text-xl font-bold text-cyber-emerald mt-1";
+                document.getElementById('verifier-status-badge').innerText = "VERIFIED";
+                document.getElementById('verifier-status-badge').className = "font-mono text-xs px-2.5 py-1 bg-cyber-emerald/10 border border-cyber-emerald text-cyber-emerald font-bold";
+            } else {
+                document.getElementById('verifier-status-text').innerText = "VERIFICATION FAILED (TAMPERED / INVALID)";
+                document.getElementById('verifier-status-text').className = "font-headline text-xl font-bold text-hazard-crimson mt-1";
+                document.getElementById('verifier-status-badge').innerText = "INVALID";
+                document.getElementById('verifier-status-badge').className = "font-mono text-xs px-2.5 py-1 bg-hazard-crimson/10 border border-hazard-crimson text-hazard-crimson font-bold";
+            }
+
+            document.getElementById('v-signer-id').innerText = data.signer_id || "--";
+            document.getElementById('v-timestamp').innerText = data.signed_at || "--";
+            document.getElementById('v-scan-id').innerText = data.scan_id || "--";
+            document.getElementById('v-key-fingerprint').innerText = data.fingerprint || "--";
+        }
+
+        async function loadDossier() {
+            try {
+                const res = await fetch('/api/docgen', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: 'AIComply-Target-System', version: '2.0.0' })
+                });
+                const data = await res.json();
+                window.dossierMarkdown = data.markdown;
+                document.getElementById('dossier-preview-content').innerHTML = `<pre class="text-text-primary whitespace-pre-wrap">${escapeHtml(data.markdown)}</pre>`;
+            } catch (err) {
+                console.error("Dossier load error:", err);
+            }
+        }
+
+        function downloadDossierMD() {
+            if (!window.dossierMarkdown) return;
+            const blob = new Blob([window.dossierMarkdown], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "ANNEX_IV_TECHNICAL_DOCS.md";
+            a.click();
+        }
+
+        // Trigger scan on startup
+        window.addEventListener('DOMContentLoaded', () => {
+            triggerScan();
+        });
+    </script>
+</body>
+</html>

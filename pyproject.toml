@@ -37,5 +37,7 @@ where = ["src"]
     "rules/**/*.yaml",
     "rules/**/*.yml",
     "rules/*.yaml",
-    "rules/*.yml"
+    "rules/*.yml",
+    "ui/static/*.html",
+    "ui/static/**/*"
 ]

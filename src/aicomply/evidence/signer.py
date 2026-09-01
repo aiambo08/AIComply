@@ -19,13 +19,16 @@ from aicomply.evidence.hasher import compute_scan_hash
 from aicomply.schemas import ScanReport, SignedEvidenceBundle
 
 
-def compute_public_key_fingerprint(public_key: ed25519.Ed25519PublicKey) -> str:
+def compute_public_key_fingerprint(public_key: Union[ed25519.Ed25519PublicKey, bytes, str, Path]) -> str:
     """Calcula la huella digital SHA-256 de una clave pública Ed25519."""
+    if not isinstance(public_key, ed25519.Ed25519PublicKey):
+        public_key = _load_public_key(public_key)
     raw_bytes = public_key.public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
     )
     return f"SHA256:{hashlib.sha256(raw_bytes).hexdigest()}"
+
 
 
 def generate_keypair(out_dir: Path, key_name: str = "aicomply") -> Tuple[Path, Path, str]:

@@ -97,3 +97,9 @@ def load_rules_from_dir(rules_dir: Path) -> RuleCatalog:
             raise RuleLoadError(f"Sintaxis YAML inválida en {yaml_file}: {yaml_err}") from yaml_err
 
     return RuleCatalog(loaded_rules)
+
+
+def load_builtin_rules() -> RuleCatalog:
+    """Carga el catálogo por defecto de reglas empaquetadas con AIComply."""
+    builtin_dir = Path(__file__).parent
+    return load_rules_from_dir(builtin_dir)
