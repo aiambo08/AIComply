@@ -42,14 +42,46 @@ class PatternType(str, Enum):
     AST_FUNCTION_DEF = "ast_function_def"   # Firma o nombre de función
     AST_ABSENCE = "ast_absence"             # Detección de ausencia (ej. llamada a LLM sin logger en el mismo scope)
     REGEX = "regex"                         # Fallback para archivos no-Python o comentarios
+    DATA_FLOW = "data_flow"                 # Análisis de flujo de datos: Source -> Sanitizer -> Sink
+    INFRA_DEPENDENCY = "infra_dependency"   # Auditoría de dependencias y lockfiles (uv.lock, requirements.txt)
+    INFRA_DOCKER = "infra_docker"           # Auditoría de Dockerfile y docker-compose.yml
+
+
+class DataFlowSource(BaseModel):
+    """Fuente de generación de datos no confiables (ej. salida de LLM)."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    target: str = Field(..., description="Nombre o llamada que genera datos no confiables")
+    return_identifiers: List[str] = Field(default_factory=list, description="Identificadores o atributos retornados")
+
+
+class DataFlowSanitizer(BaseModel):
+    """Validador, esquema o compuerta humana que sanea los datos."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    target: str = Field(..., description="Función, esquema o patrón que sanea los datos")
+    sanitizer_type: str = Field(default="moderation", description="moderation | schema_validation | human_gate")
+
+
+class DataFlowSink(BaseModel):
+    """Sumidero crítico donde los datos no saneados constituyen un riesgo."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    target: str = Field(..., description="Función o sumidero crítico sensible")
+    vulnerable_params: List[str] = Field(default_factory=list, description="Parámetros vulnerables")
+
+
+class DataFlowSpec(BaseModel):
+    """Especificación declarativa de análisis de flujo de datos."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    sources: List[DataFlowSource] = Field(..., min_length=1)
+    sinks: List[DataFlowSink] = Field(..., min_length=1)
+    sanitizers: List[DataFlowSanitizer] = Field(default_factory=list)
 
 
 class RulePattern(BaseModel):
     """Especificación de un patrón de detección dentro de una regla."""
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: PatternType = Field(..., description="Tipo de análisis AST o Regex a aplicar")
-    target: str = Field(..., description="Símbolo, import, función o expresión regular a buscar")
+    type: PatternType = Field(..., description="Tipo de análisis AST, Regex, DataFlow o Infraestructura")
+    target: Optional[str] = Field(default=None, description="Símbolo, import, función o expresión regular a buscar")
     match_args: Optional[Dict[str, Any]] = Field(
         default=None, 
         description="Parámetros obligatorios o prohibidos dentro de una llamada de función"
@@ -57,6 +89,14 @@ class RulePattern(BaseModel):
     negate: bool = Field(
         default=False, 
         description="Si es True, la regla dispara cuando el patrón NO se encuentra (ej. falta de logging)"
+    )
+    data_flow: Optional[DataFlowSpec] = Field(
+        default=None,
+        description="Especificación de flujo de datos (Source -> Sanitizer -> Sink)"
+    )
+    manifest_target: Optional[str] = Field(
+        default=None,
+        description="Objetivo de archivo de manifiesto o contenedor"
     )
 
 
@@ -96,6 +136,16 @@ class CodeLocation(BaseModel):
     end_col: int = Field(default=0, ge=0)
 
 
+class FlowStep(BaseModel):
+    """Paso en la traza de flujo de datos (Source -> Propagación -> Sink)."""
+    model_config = ConfigDict(frozen=True)
+
+    step_type: str = Field(..., description="source | propagation | sanitizer | sink")
+    message: str = Field(..., description="Descripción del paso en la traza de ejecución")
+    location: CodeLocation
+    code_snippet: Optional[str] = Field(default=None, description="Fragmento de código del paso")
+
+
 class Finding(BaseModel):
     """Representación inmutable de una no-conformidad detectada."""
     model_config = ConfigDict(frozen=True)
@@ -112,6 +162,7 @@ class Finding(BaseModel):
     remediation: str
     max_fine: str
     confidence: Confidence
+    flow_steps: Optional[List[FlowStep]] = Field(default=None, description="Traza de ejecución en análisis de flujo de datos (Source -> Sink)")
 
 
 class ScanSummary(BaseModel):
