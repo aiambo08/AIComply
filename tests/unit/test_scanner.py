@@ -164,4 +164,40 @@ def unsafe_task():
     assert "SOURCE" in locs[0]["location"]["message"]["text"]
     assert "PROPAGATION" in locs[1]["location"]["message"]["text"]
     assert "SINK" in locs[2]["location"]["message"]["text"]
+
+
+def test_end_to_end_mixed_infra_and_code_scan(tmp_path: Path):
+    """Verifica el escaneo consolidado de un repositorio con código, Dockerfile y requirements.txt."""
+    from aicomply.cli import get_default_rules_dir
+    from aicomply.rules.loader import load_rules_from_dir
+
+    rules = load_rules_from_dir(get_default_rules_dir())
+    engine = ScanEngine(catalog=rules)
+
+    # 1. Archivo Python vulnerable
+    app_py = tmp_path / "app.py"
+    app_py.write_text("import openai\nimport os\nres = openai.chat.completions.create(model='gpt-4o', messages=[])\nos.system(res.choices[0].message.content)\n", encoding="utf-8")
+
+    # 2. requirements.txt con librería prohibida
+    req_txt = tmp_path / "requirements.txt"
+    req_txt.write_text("openai>=1.0.0\ndeepface==0.0.79\n", encoding="utf-8")
+
+    # 3. Dockerfile corriendo como root
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM python:3.11\nEXPOSE 8000\nCMD ['python', 'app.py']\n", encoding="utf-8")
+
+    report = engine.scan_path(tmp_path)
+
+    assert report.summary.total_files_scanned >= 3
+    rule_ids = {f.rule_id for f in report.findings}
+
+    # Debe detectar:
+    # - DataFlow: EUAIA-ART14-002
+    # - Dependency: EUAIA-ART05-003
+    # - Docker: EUAIA-ART15-004 (root) y EUAIA-ART15-005 (insecure HTTP port)
+    assert "EUAIA-ART14-002" in rule_ids
+    assert "EUAIA-ART05-003" in rule_ids
+    assert "EUAIA-ART15-004" in rule_ids
+    assert "EUAIA-ART15-005" in rule_ids
+
 
