@@ -1,0 +1,32 @@
+id: EUAIA-ART14-002
+article: "Art. 14(4)(a) & Art. 15(1)"
+title: "Ejecución autónoma de comandos del sistema con salida de IA no validada"
+severity: CRITICAL
+risk_tier: high_risk
+confidence: HIGH
+description: "Se detectó que el contenido devuelto por un LLM se propaga directamente a funciones de ejecución de comandos del sistema (os.system, subprocess) sin pasar por filtros de validación de esquemas ni compuertas de supervisión humana."
+remediation: "Implemente una compuerta de supervisión humana (Human-in-the-Loop) o valide la salida del LLM contra un esquema estructurado estricto (Pydantic / lista blanca de comandos) antes de su invocación."
+max_fine: "35M€ o 7%"
+patterns:
+  - type: data_flow
+    data_flow:
+      sources:
+        - target: "openai.chat.completions.create"
+        - target: "anthropic.messages.create"
+        - target: "litellm.completion"
+        - target: "model.generate"
+      sanitizers:
+        - target: "guardrails.validate"
+        - target: "model_validate"
+        - target: "model_validate_json"
+        - target: "pydantic"
+        - target: "is_safe_command"
+        - target: "human_gate"
+      sinks:
+        - target: "os.system"
+        - target: "subprocess.run"
+        - target: "subprocess.Popen"
+        - target: "subprocess.check_output"
+        - target: "subprocess.call"
+        - target: "eval"
+        - target: "exec"

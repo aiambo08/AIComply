@@ -7,6 +7,7 @@ import ast
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from aicomply.dataflow.taint_engine import DataFlowEngine
 from aicomply.evidence.hasher import compute_finding_hash
 from aicomply.schemas import (
     CodeLocation,
@@ -168,6 +169,7 @@ class PythonASTScanner:
 
     def __init__(self, rules: List[Rule]) -> None:
         self.rules = rules
+        self.dataflow_engine = DataFlowEngine(rules)
 
     def scan_file(self, file_path: Path, base_path: Optional[Path] = None) -> List[Finding]:
         findings: List[Finding] = []
@@ -186,11 +188,13 @@ class PythonASTScanner:
 
         supressions = visitor._extract_suppressions()
 
+        # 1. Evaluación de patrones sintácticos AST estándar
         for rule in self.rules:
             for pattern in rule.patterns:
+                if pattern.type == PatternType.DATA_FLOW:
+                    continue
                 matched_findings = self._evaluate_pattern(rule, pattern, visitor, rel_path)
                 for f in matched_findings:
-                    # Comprobar si la linea del hallazgo tiene supresión inline
                     line_supressions = supressions.get(f.location.start_line, set())
                     if rule.id in line_supressions or "ALL" in line_supressions:
                         continue
@@ -199,6 +203,23 @@ class PythonASTScanner:
                     if dedup_key not in seen_finding_ids:
                         seen_finding_ids.add(dedup_key)
                         findings.append(f)
+
+        # 2. Evaluación de reglas de flujo de datos (Taint Tracking & CFG)
+        dataflow_findings = self.dataflow_engine.analyze_file(
+            tree=tree,
+            source_code=source,
+            file_path=rel_path,
+            aliases=visitor.aliases,
+        )
+        for f in dataflow_findings:
+            line_supressions = supressions.get(f.location.start_line, set())
+            if f.rule_id in line_supressions or "ALL" in line_supressions:
+                continue
+            dedup_key = (f.rule_id, f.location.file_path, f.location.start_line)
+            if dedup_key not in seen_finding_ids:
+                seen_finding_ids.add(dedup_key)
+                findings.append(f)
+
         return findings
 
     def _evaluate_pattern(
@@ -209,7 +230,8 @@ class PythonASTScanner:
         rel_path: str
     ) -> List[Finding]:
         results: List[Finding] = []
-        target_lower = pattern.target.lower()
+        target_str = pattern.target or ""
+        target_lower = target_str.lower()
 
         if pattern.type == PatternType.AST_IMPORT:
             for imp_name, node in visitor.imports:

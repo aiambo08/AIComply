@@ -1,0 +1,28 @@
+id: EUAIA-ART50-003
+article: "Art. 50(2) & Art. 13"
+title: "Emisión de contenido sintético directo sin moderación ni marca de agua"
+severity: MEDIUM
+risk_tier: limited_risk
+confidence: HIGH
+description: "El flujo de datos expone directamente contenido generado por IA hacia respuestas HTTP de usuarios sin pasar por filtros de moderación o inclusión de advertencia/metadatos de contenido sintético."
+remediation: "Incorpore un paso de moderación de contenido o agregue el encabezado/etiqueta obligatoria indicando que el contenido fue generado por un sistema de IA."
+max_fine: "15M€ o 3%"
+patterns:
+  - type: data_flow
+    data_flow:
+      sources:
+        - target: "openai.chat.completions.create"
+        - target: "anthropic.messages.create"
+        - target: "litellm.completion"
+        - target: "model.generate"
+      sanitizers:
+        - target: "moderations.create"
+        - target: "openai.moderations.create"
+        - target: "guardrails.validate"
+        - target: "add_ai_disclaimer"
+        - target: "add_watermark"
+      sinks:
+        - target: "jsonify"
+        - target: "render_template"
+        - target: "Response"
+        - target: "send_response"
