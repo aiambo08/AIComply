@@ -43,7 +43,7 @@ def generate_sarif_report(report: ScanReport) -> str:
         rule_index = list(rules_dict.keys()).index(f.rule_id)
 
         # Construir el resultado individual del hallazgo
-        results.append({
+        result_item: Dict[str, Any] = {
             "ruleId": f.rule_id,
             "ruleIndex": rule_index,
             "level": SARIF_LEVEL_MAP.get(f.severity, "warning"),
@@ -69,7 +69,41 @@ def generate_sarif_report(report: ScanReport) -> str:
             "partialFingerprints": {
                 "sha256": f.id
             }
-        })
+        }
+
+        # Exportar traza de flujo de datos interactiva (codeFlows) si está presente
+        if f.flow_steps:
+            thread_flow_locs = []
+            for step in f.flow_steps:
+                thread_flow_locs.append({
+                    "location": {
+                        "message": {"text": f"{step.step_type.upper()}: {step.message}"},
+                        "physicalLocation": {
+                            "artifactLocation": {
+                                "uri": step.location.file_path.replace("\\", "/")
+                            },
+                            "region": {
+                                "startLine": step.location.start_line,
+                                "endLine": step.location.end_line,
+                                "startColumn": max(1, step.location.start_col + 1),
+                                "endColumn": max(1, step.location.end_col + 1),
+                                "snippet": {"text": step.code_snippet or ""}
+                            }
+                        }
+                    },
+                    "nestingLevel": 0
+                })
+            result_item["codeFlows"] = [
+                {
+                    "threadFlows": [
+                        {
+                            "locations": thread_flow_locs
+                        }
+                    ]
+                }
+            ]
+
+        results.append(result_item)
 
     sarif_payload = {
         "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
