@@ -185,3 +185,17 @@ class ScanReport(BaseModel):
     target_path: str
     summary: ScanSummary
     findings: List[Finding]
+
+
+class SignedEvidenceBundle(BaseModel):
+    """Paquete de evidencia criptográfica inmutable y firmado asimétricamente (Ed25519)."""
+    model_config = ConfigDict(frozen=True)
+
+    version: str = Field(default="2.0.0", description="Versión del protocolo de evidencia")
+    algorithm: str = Field(default="Ed25519", description="Algoritmo de firma digital asimétrica")
+    scan_id: str = Field(..., description="Hash SHA-256 consolidado de los hallazgos")
+    timestamp: str = Field(..., description="Timestamp ISO 8601 UTC de firma")
+    signer_identity: Optional[str] = Field(default=None, description="Identidad del firmante (ej. CI/CD service account, auditor email)")
+    public_key_fingerprint: str = Field(..., description="Fingerprint SHA-256 de la clave pública Ed25519")
+    signature: str = Field(..., description="Firma digital Ed25519 codificada en base64")
+    report: ScanReport = Field(..., description="Cuerpo canónico del reporte auditado")
