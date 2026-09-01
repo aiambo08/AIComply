@@ -13,6 +13,8 @@ from typing import List, Optional, Set, Tuple
 from aicomply.classifier.risk_tier import classify_overall_risk
 from aicomply.config import AIComplyConfig, load_project_config
 from aicomply.evidence.hasher import compute_scan_hash
+from aicomply.infra.dependency_scanner import DependencyScanner
+from aicomply.infra.docker_scanner import DockerScanner
 from aicomply.rules.loader import RuleCatalog
 from aicomply.scanner.ast_parser import PythonASTScanner
 from aicomply.scanner.regex_matcher import RegexScanner
@@ -33,7 +35,23 @@ IGNORED_DIRS = {
 }
 
 PYTHON_EXTENSIONS = {".py", ".pyw"}
-TEXT_EXTENSIONS = {".py", ".js", ".ts", ".jsx", ".tsx", ".yaml", ".yml", ".json", ".env"}
+TEXT_EXTENSIONS = {".py", ".js", ".ts", ".jsx", ".tsx", ".yaml", ".yml", ".json", ".env", ".toml", ".txt", ".lock"}
+INFRA_FILENAMES = {
+    "dockerfile", "docker-compose.yml", "docker-compose.yaml",
+    "compose.yml", "compose.yaml", "requirements.txt",
+    "uv.lock", "pyproject.toml", "pipfile", "pipfile.lock"
+}
+
+
+def is_scannable_file(path: Path) -> bool:
+    """Determina si un archivo debe ser incluido en el escaneo estático o de infraestructura."""
+    name_lower = path.name.lower()
+    suffix_lower = path.suffix.lower()
+    if suffix_lower in TEXT_EXTENSIONS:
+        return True
+    if name_lower in INFRA_FILENAMES or "dockerfile" in name_lower or "compose" in name_lower:
+        return True
+    return False
 
 
 class ScanEngine:
@@ -46,6 +64,8 @@ class ScanEngine:
         self.rules: List[Rule] = self._prepare_active_rules()
         self.ast_scanner = PythonASTScanner(self.rules)
         self.regex_scanner = RegexScanner(self.rules)
+        self.dependency_scanner = DependencyScanner(self.rules)
+        self.docker_scanner = DockerScanner(self.rules)
     
     def _prepare_active_rules(self) -> List[Rule]:
         """Aplica filtros de artículos CLI y exclusiones de reglas declaradas en la configuración."""
@@ -82,6 +102,8 @@ class ScanEngine:
                 self.rules = self._prepare_active_rules()
                 self.ast_scanner = PythonASTScanner(self.rules)
                 self.regex_scanner = RegexScanner(self.rules)
+                self.dependency_scanner = DependencyScanner(self.rules)
+                self.docker_scanner = DockerScanner(self.rules)
 
         files_to_scan: List[Path] = []
         if target_path.is_file():
@@ -93,7 +115,7 @@ class ScanEngine:
                 if path.is_file():
                     if any(ignored in path.parts for ignored in IGNORED_DIRS):
                         continue
-                    if path.suffix.lower() not in TEXT_EXTENSIONS:
+                    if not is_scannable_file(path):
                         continue
 
                     rel_path_str = str(path.relative_to(base_dir)).replace("\\", "/")
@@ -115,17 +137,26 @@ class ScanEngine:
                 line_count = 0
 
             file_findings: List[Finding] = []
+            filename_lower = file_path.name.lower()
 
             # 1. Análisis AST en archivos Python (prioridad sobre Regex)
             if file_path.suffix.lower() in PYTHON_EXTENSIONS:
                 ast_findings = self.ast_scanner.scan_file(file_path, base_path=base_dir)
                 file_findings.extend(ast_findings)
 
-            # 2. Análisis Regex complementario
+            # 2. Análisis de Manifiestos y Dependencias (pyproject.toml, requirements.txt, uv.lock, Pipfile)
+            dep_findings = self.dependency_scanner.scan_file(file_path, base_path=base_dir)
+            file_findings.extend(dep_findings)
+
+            # 3. Análisis de Contenedores Docker y Docker Compose
+            docker_findings = self.docker_scanner.scan_file(file_path, base_path=base_dir)
+            file_findings.extend(docker_findings)
+
+            # 4. Análisis Regex complementario (Secretos, PII, patrones textuales)
             regex_findings = self.regex_scanner.scan_file(file_path, base_path=base_dir)
             file_findings.extend(regex_findings)
 
-            # 3. Deduplicación: primera detección (AST) prevalece sobre Regex
+            # 5. Deduplicación: primera detección prevalece sobre duplicados en misma línea
             for f in file_findings:
                 dedup_key = (f.rule_id, f.location.file_path, f.location.start_line)
                 if dedup_key not in seen_dedup_keys:

@@ -1,0 +1,44 @@
+- id: EUAIA-ART15-004
+  article: "Art. 15(1) & GDPR Art. 32"
+  title: "Contenedor de inferencia de IA ejecutándose con privilegios de root"
+  severity: HIGH
+  risk_tier: high_risk
+  confidence: HIGH
+  description: "El Dockerfile despliega un runtime de inferencia o API de IA sin definir un usuario no privilegiado (USER non-root), exponiendo la infraestructura a riesgos de escalada de privilegios y escape de contenedor."
+  remediation: "Agregue una directiva 'USER 1000:1000' o cree un usuario dedicado para el proceso de inferencia antes del ENTRYPOINT/CMD."
+  max_fine: "15M€ o 3%"
+  patterns:
+    - type: infra_docker
+      target: "Dockerfile"
+      match_args:
+        missing_directive: "USER"
+
+- id: EUAIA-ART15-005
+  article: "Art. 15(1) & GDPR Art. 32"
+  title: "Endpoint de inferencia de IA expuesto en HTTP plano no cifrado"
+  severity: HIGH
+  risk_tier: high_risk
+  confidence: HIGH
+  description: "El contenedor o configuración de compose expone puertos de inferencia estándar (8000, 5000, 80) sin configuración de certificados TLS, permitiendo la interceptación de tráfico y datos confidenciales."
+  remediation: "Configure terminación TLS mediante reverse proxy (Nginx, Traefik, Caddy) o habilite flags SSL nativas en el servidor ASGI/WSGI."
+  max_fine: "15M€ o 3%"
+  patterns:
+    - type: infra_docker
+      target: "insecure_http"
+      match_args:
+        insecure_http_endpoint: true
+
+- id: EUAIA-ART15-006
+  article: "Art. 15(1) & GDPR Art. 32"
+  title: "Contenedor de IA desplegado en modo privilegiado"
+  severity: CRITICAL
+  risk_tier: high_risk
+  confidence: HIGH
+  description: "El servicio en docker-compose tiene habilitado 'privileged: true' o ejecución directa bajo usuario root, otorgando acceso sin restricciones a los dispositivos del host y al kernel."
+  remediation: "Desactive 'privileged: true' y restrinja los 'cap_add' exclusivamente a los recursos de GPU necesarios (ej. nvidia runtime)."
+  max_fine: "35M€ o 7%"
+  patterns:
+    - type: infra_docker
+      target: "privileged_mode"
+      match_args:
+        privileged_mode: true

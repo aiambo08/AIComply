@@ -1,0 +1,16 @@
+- id: EUAIA-ART05-003
+  article: "Art. 5(1)(e) & Art. 5(1)(f)"
+  title: "Dependencia de biometría o scraping facial no declarada en manifiesto"
+  severity: CRITICAL
+  risk_tier: prohibited
+  confidence: HIGH
+  description: "Se detectó la inclusión de librerías especializadas en extracción biométrica masiva o clasificación de rasgos faciales prohibidos (ej. face-recognition, deepface, py-feat) en los archivos de dependencias del proyecto."
+  remediation: "Elimine la dependencia o asegure que su uso cuenta con autorización expresa y no incurre en las prohibiciones taxativas del Art. 5 (raspado facial indiscriminado, inferencia de emociones)."
+  max_fine: "35M€ o 7%"
+  patterns:
+    - type: infra_dependency
+      target: "face-recognition"
+    - type: infra_dependency
+      target: "deepface"
+    - type: infra_dependency
+      target: "py-feat"
