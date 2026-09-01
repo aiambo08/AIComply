@@ -124,4 +124,44 @@ def test_cross_engine_deduplication(tmp_path: Path):
     report = engine.scan_path(test_file)
     gdpr_tls_findings = [f for f in report.findings if f.rule_id == "GDPR-ART32-002"]
     # Debería haber exactamente 1 hallazgo gracias a la deduplicación cross-engine
-    assert len(gdpr_tls_findings) == 1
+    assert len(gdpr_tls_findings) == 1
+
+
+def test_sarif_codeflows_export(tmp_path: Path):
+    """Verifica que los hallazgos de DataFlow exporten codeFlows con threadFlows a SARIF."""
+    import json
+    from aicomply.cli import get_default_rules_dir
+    from aicomply.reporter.sarif_reporter import generate_sarif_report
+    from aicomply.rules.loader import load_rules_from_dir
+
+    rules = load_rules_from_dir(get_default_rules_dir())
+    engine = ScanEngine(catalog=rules)
+
+    agent_code = """
+import os
+import openai
+
+def unsafe_task():
+    res = openai.chat.completions.create(model="gpt-4o", messages=[])
+    cmd = res.choices[0].message.content
+    os.system(cmd)
+"""
+    agent_file = tmp_path / "agent_flow.py"
+    agent_file.write_text(agent_code, encoding="utf-8")
+
+    report = engine.scan_path(agent_file)
+    sarif_str = generate_sarif_report(report)
+    sarif_data = json.loads(sarif_str)
+
+    results = sarif_data["runs"][0]["results"]
+    flow_results = [r for r in results if r["ruleId"] == "EUAIA-ART14-002"]
+    assert len(flow_results) >= 1
+    assert "codeFlows" in flow_results[0]
+    thread_flows = flow_results[0]["codeFlows"][0]["threadFlows"]
+    assert len(thread_flows) == 1
+    locs = thread_flows[0]["locations"]
+    assert len(locs) == 3
+    assert "SOURCE" in locs[0]["location"]["message"]["text"]
+    assert "PROPAGATION" in locs[1]["location"]["message"]["text"]
+    assert "SINK" in locs[2]["location"]["message"]["text"]
+
