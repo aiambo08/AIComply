@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 aicomply = "aicomply.cli:app"
+aicomply-cli = "aicomply.cli:app"
 
 [tool.setuptools]
 include-package-data = true
