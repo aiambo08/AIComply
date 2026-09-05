@@ -11,6 +11,58 @@
 
 ---
 
+## ⚡ Zero-Install Quickstart — Audit in 5 Seconds
+
+> **No global installation required.** Run directly from PyPI using `uvx` or `pipx`:
+
+```bash
+# Instant scan — no install needed (uses uvx)
+uvx aicomply-cli scan .
+
+# Alternative with pipx
+pipx run aicomply-cli scan .
+
+# Persistent global install (recommended for CI/CD and daily use)
+uv pip install aicomply-cli   # via uv
+pip install aicomply-cli       # via pip
+```
+
+---
+
+## 🖥️ Visual Showcase
+
+> AIComply ships a fully-embedded **interactive web console** (`aicomply ui`) — no extra dependencies — with a taint flow canvas, EU AI Act wizard, drag-and-drop Ed25519 verifier, and Annex IV dossier explorer.
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/assets/dataflow_matrix_tab_1788272763890.png" width="480" alt="Dataflow Taint Matrix — Source → Propagation → Sink" />
+      <br/><sub><b>Taint Flow Canvas</b> — Source → Propagation → Sink</sub>
+    </td>
+    <td align="center">
+      <img src="docs/assets/statutory_wizard_tab_1788272780840.png" width="480" alt="EU AI Act Risk Classification Wizard" />
+      <br/><sub><b>Risk Classification Wizard</b> — Art. 5 / High / Limited / Minimal</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="docs/assets/ed25519_verifier_tab_1788272800558.png" width="480" alt="Ed25519 Evidence Verifier" />
+      <br/><sub><b>Ed25519 Verifier</b> — Drag & drop offline verification</sub>
+    </td>
+    <td align="center">
+      <img src="docs/assets/annex_iv_dossier_tab_1788272853397.png" width="480" alt="Annex IV Technical Dossier" />
+      <br/><sub><b>Annex IV Dossier</b> — Auto-generated regulatory documentation</sub>
+    </td>
+  </tr>
+</table>
+
+```bash
+# Launch the interactive web console on your repo
+aicomply ui ./my-ai-project
+```
+
+---
+
 ## 1. The Problem: Compliance as an Afterthought Is a Budget Crisis
 
 ### The Status Quo
@@ -100,11 +152,13 @@ Engineering teams building AI-powered products under the **EU AI Act (Regulation
 ### Installation
 
 ```bash
-# Recommended: using uv (fast, reproducible)
-uv pip install aicomply-cli
+# Zero-install: run directly without permanent installation
+uvx aicomply-cli scan .      # via uvx (fastest, ephemeral)
+pipx run aicomply-cli scan . # via pipx
 
-# Standard pip
-pip install aicomply-cli
+# Persistent install (recommended for regular use)
+uv pip install aicomply-cli   # via uv
+pip install aicomply-cli       # via pip
 ```
 
 ### 1. Key Generation (Ed25519 PKI)
@@ -139,7 +193,7 @@ aicomply scan ./my-ai-project --format sarif --output results.sarif
 aicomply verify report.evidence.json --public-key ./pki/auditor_key.pub
 ```
 
-### 4. Annex IV Regulatory Dossier
+### 4. Annex IV Regulatory Dossier (`aicomply docgen`)
 
 ```bash
 aicomply docgen ./my-ai-project \
@@ -148,11 +202,23 @@ aicomply docgen ./my-ai-project \
   --output ANNEX_IV_TECHNICAL_DOCS.md
 ```
 
-### 5. Interactive Risk Assessment Wizard
+Produces a structured Markdown document covering all 5 Annex IV sections mandated by Art. 11: system identification, component inventory, monitoring status, oversight measures, and the compliance risk matrix.
+
+### 5. Interactive Risk Assessment Wizard (`aicomply assess`)
 
 ```bash
 aicomply assess
 ```
+
+Guides stakeholders through a structured statutory decision tree to classify an AI system under the EU AI Act (Prohibited / High Risk / Limited Risk / Minimal Risk), detailing applicable articles, enforcement deadlines, and binding obligations.
+
+### 6. Interactive Web Console (`aicomply ui`)
+
+```bash
+aicomply ui ./my-ai-project --port 8000
+```
+
+Launches an embedded, zero-dependency browser cockpit featuring the Control Flow Graph taint flow matrix, real-time risk assessment, Ed25519 drag-and-drop evidence verification, and Annex IV dossier preview.
 
 **Exit code contract:**
 
@@ -161,25 +227,6 @@ aicomply assess
 | `0` | Repository is fully compliant — zero findings |
 | `1` | One or more compliance violations detected |
 | `2` | Scanner system error (invalid path, YAML schema failure) |
-
-### Generate an Annex IV Regulatory Dossier
-
-```bash
-aicomply docgen ./my-ai-project \
-  --name "LLM-HR-Screening-Service" \
-  --version "2.3.1" \
-  --output ANNEX_IV_TECHNICAL_DOCS.md
-```
-
-Produces a structured Markdown document covering all 5 Annex IV sections: system identification, component inventory, monitoring status, oversight measures, and the compliance risk matrix.
-
-### Interactive Risk Classification
-
-```bash
-aicomply assess
-```
-
-Guides stakeholders through a structured decision tree to classify a system under the EU AI Act (Prohibited / High Risk / Limited Risk / Minimal Risk), with applicable articles, enforcement timelines, and binding obligations.
 
 ---
 
@@ -261,7 +308,27 @@ requests.post(url, verify=False)  # aicomply:ignore ALL
 
 ## 8. CI/CD Integration — GitHub Advanced Security
 
-Add the following workflow to `.github/workflows/compliance.yml` to enforce compliance and render interactive `codeFlows` on every pull request:
+### One-Line Integration via GitHub Action
+
+Use the official **AIComply GitHub Action** directly from the Marketplace — no manual workflow scripting needed:
+
+```yaml
+# .github/workflows/compliance.yml
+steps:
+  - uses: actions/checkout@v4
+  - name: AIComply EU AI Act & GDPR Scan
+    uses: aiambo08/AIComply@v2
+    with:
+      path: "."
+      format: "sarif"
+      output: "aicomply-results.sarif"
+      enforce-risk-tier: "high_risk"   # optional: block PRs exceeding this tier
+      upload-sarif: "true"              # optional: auto-upload to GitHub Security tab
+```
+
+### Manual Workflow Setup
+
+Alternatively, add the following workflow to `.github/workflows/compliance.yml` to enforce compliance and render interactive `codeFlows` on every pull request:
 
 ```yaml
 name: EU AI Act & GDPR Compliance Scan
@@ -339,7 +406,7 @@ repos:
 
 ## 10. Testing & Verification
 
-The project ships with **78 automated unit, integration, and benchmark tests** covering all intra-procedural CFG paths, taint tracking lattice joins ($\sqcup$), supply chain manifest parsing, Dockerfile/Compose scanning, Ed25519 cryptography, and SARIF `codeFlows` formatting.
+The project ships with **84 automated unit, integration, and benchmark tests** covering all intra-procedural CFG paths, taint tracking lattice joins ($\sqcup$), supply chain manifest parsing, Dockerfile/Compose scanning, Ed25519 cryptography, and SARIF `codeFlows` formatting.
 
 ```bash
 # Run the full test and benchmark suite
@@ -355,7 +422,19 @@ pytest --cov=aicomply --cov-report=term-missing
 uv run pytest
 ```
 
-## 11. License & Legal Notice
+---
+
+## 11. Resources & Engineering Guides
+
+| Resource | Description |
+|---|---|
+| 📖 **[EU AI Act Engineering Guide](./docs/EU_AI_ACT_ENGINEERS_GUIDE.md)** | Translates every EU AI Act article into concrete Python code patterns: vulnerable code vs. compliant code, with a complete Annex IV preparation checklist. |
+| 🖥️ **Interactive Cockpit** (`aicomply ui ./my-project`) | Local browser console with taint flow visualization, risk wizard, Ed25519 verifier, and Annex IV dossier explorer. |
+| 📄 **[Architecture Decision Records](./docs/adr_phase2_architecture.md)** | Deep-dive into the CFG design, pessimistic join operator, and cryptographic evidence pipeline. |
+
+---
+
+## 12. License & Legal Notice
 
 Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for full terms.
 
