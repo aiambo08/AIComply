@@ -323,8 +323,6 @@ def ui(
     path: Path = typer.Argument(
         Path("."),
         help="Ruta al repositorio a inspeccionar en la consola visual.",
-        exists=True,
-        resolve_path=True,
     ),
     port: int = typer.Option(
         8080,
@@ -344,22 +342,24 @@ def ui(
     ),
 ) -> None:
     """Inicia la consola visual e interactiva local de cumplimiento y trazabilidad (AIComply Cockpit)."""
+    resolved_path = path.resolve()
+    if not resolved_path.exists():
+        console.print(f"[bold red]Error:[/bold red] La ruta indicada no existe: [yellow]{path}[/yellow] (Resuelta: {resolved_path})")
+        raise typer.Exit(code=2)
+
     from aicomply.ui.server import start_ui_server
     from rich.panel import Panel
 
     url = f"http://{host}:{port}"
-    panel = Panel(
-        f"[bold cyan]AIComply Interactive Cockpit[/bold cyan]\n"
-        f"Consola activa en: [bold green]{url}[/bold green]\n"
-        f"Repositorio objetivo: [yellow]{path}[/yellow]\n"
-        f"Presione [bold red]Ctrl+C[/bold red] para detener el servidor.",
-        title="[bold green]AIComply UI Server // ONLINE[/bold green]",
-        border_style="green",
-    )
-    console.print(panel)
+    console.print()
+    console.print(f"  [bold green]●[/bold green] [bold cyan]AIComply Interactive Cockpit ONLINE[/bold cyan]")
+    console.print(f"  [bold]Acceso Web:[/bold]            [bold green underline]{url}[/bold green underline]")
+    console.print(f"  [bold]Repositorio Objetivo:[/bold]  [yellow]{resolved_path}[/yellow]")
+    console.print(f"  [dim]Presione Ctrl+C en esta terminal para detener el servidor web.[/dim]")
+    console.print()
 
     server = start_ui_server(
-        target_path=path,
+        target_path=resolved_path,
         host=host,
         port=port,
         open_browser=not no_browser,

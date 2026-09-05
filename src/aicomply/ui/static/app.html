@@ -526,17 +526,27 @@
             document.getElementById('header-scan-id').innerText = data.scan_id ? data.scan_id.substring(0, 18) + '...' : 'CLEAN';
             document.getElementById('scan-fingerprint-display').innerText = data.scan_id || 'SHA256:0000000000000000';
             
-            const summary = data.summary || { prohibited_count: 0, high_risk_count: 0, total_findings: 0 };
-            document.getElementById('count-prohibited').innerText = summary.prohibited_count;
-            document.getElementById('count-highrisk').innerText = summary.high_risk_count;
-            document.getElementById('findings-count-badge').innerText = (data.findings || []).length;
+            if (data.target_path) {
+                const targetName = data.target_path.split(/[/\\]/).filter(Boolean).pop() || data.target_path;
+                document.getElementById('active-repo-label').innerText = 'Target: ./' + targetName;
+            }
+
+            const summary = data.summary || {};
+            const tierMap = summary.findings_by_tier || {};
+            const prohibitedCount = tierMap.prohibited ?? (summary.prohibited_count ?? 0);
+            const highRiskCount = tierMap.high_risk ?? (summary.high_risk_count ?? 0);
+            const totalCount = summary.total_findings ?? (data.findings ? data.findings.length : 0);
+
+            document.getElementById('count-prohibited').innerText = prohibitedCount;
+            document.getElementById('count-highrisk').innerText = highRiskCount;
+            document.getElementById('findings-count-badge').innerText = totalCount;
 
             // Exposure calculation
-            if (summary.prohibited_count > 0) {
+            if (prohibitedCount > 0) {
                 document.getElementById('exposure-amount').innerText = '€35M / 7%';
                 document.getElementById('exposure-desc').innerText = 'Prohibited AI practice violation (Art. 5)';
                 document.getElementById('status-indicator-prohibited').className = 'w-2.5 h-2.5 rounded-full bg-hazard-crimson shadow-[0_0_8px_#ff3355]';
-            } else if (summary.high_risk_count > 0) {
+            } else if (highRiskCount > 0) {
                 document.getElementById('exposure-amount').innerText = '€15M / 3%';
                 document.getElementById('exposure-desc').innerText = 'High-Risk compliance violation (Art. 6/14/15)';
                 document.getElementById('status-indicator-highrisk').className = 'w-2.5 h-2.5 rounded-full bg-alert-amber shadow-[0_0_8px_#ffb800]';
@@ -561,12 +571,14 @@
                 const isCrit = f.severity === 'CRITICAL';
                 const isHigh = f.severity === 'HIGH';
                 const badgeColor = isCrit ? 'bg-hazard-crimson/20 border-hazard-crimson text-red-300' : (isHigh ? 'bg-alert-amber/20 border-alert-amber text-amber-300' : 'bg-border-slate border-border-slate-bright text-text-secondary');
-                
+                const filePath = f.location ? f.location.file_path : (f.file_path || '--');
+                const startLine = f.location ? f.location.start_line : (f.start_line || 1);
+
                 return `
                     <div onclick="selectFinding(${idx})" class="p-3 cursor-pointer hover:bg-slate-card-hover transition-all ${idx === selectedFindingIndex ? 'bg-[#151c28] border-l-2 border-cyber-emerald' : ''}">
                         <div class="flex justify-between items-center mb-1">
                             <span class="data-badge border ${badgeColor}">${f.rule_id}</span>
-                            <span class="font-mono text-[10px] text-text-muted">${f.file_path}:${f.start_line}</span>
+                            <span class="font-mono text-[10px] text-text-muted">${filePath}:${startLine}</span>
                         </div>
                         <div class="text-xs font-semibold text-text-primary truncate">${f.title}</div>
                     </div>
@@ -601,12 +613,16 @@
                 return;
             }
 
-            document.getElementById('code-viewer-filename').innerText = `File: ${finding.file_path}`;
-            document.getElementById('code-viewer-lines').innerText = `Line: ${finding.start_line}-${finding.end_line}`;
+            const filePath = finding.location ? finding.location.file_path : (finding.file_path || '--');
+            const startLine = finding.location ? finding.location.start_line : (finding.start_line || 1);
+            const endLine = finding.location ? finding.location.end_line : (finding.end_line || 1);
+
+            document.getElementById('code-viewer-filename').innerText = `File: ${filePath}`;
+            document.getElementById('code-viewer-lines').innerText = `Line: ${startLine}-${endLine}`;
 
             const lines = (finding.code_snippet || "").split('\n');
             const codeHtml = lines.map((line, lIdx) => {
-                const lineNum = finding.start_line + lIdx;
+                const lineNum = startLine + lIdx;
                 const isHighlight = lIdx === 0;
                 return `<div class="flex ${isHighlight ? 'bg-hazard-crimson/20 text-red-200 font-bold border-l-2 border-hazard-crimson pl-1' : 'text-text-secondary'}">
                     <span class="w-8 text-right mr-3 text-text-muted select-none">${lineNum}</span>
@@ -616,10 +632,28 @@
 
             document.getElementById('code-viewer-content').innerHTML = codeHtml;
 
-            // If finding has flow steps, update CFG nodes
+            // If finding has flow steps, update CFG nodes dynamically
             if (finding.flow_steps && finding.flow_steps.length > 0) {
-                const s = finding.flow_steps[0];
-                document.getElementById('cfg-source-code').innerText = s.code_snippet || "openai.chat.completions.create()";
+                const sourceStep = finding.flow_steps.find(s => s.step_type === 'source') || finding.flow_steps[0];
+                const propStep = finding.flow_steps.find(s => s.step_type === 'propagation') || finding.flow_steps[Math.min(1, finding.flow_steps.length - 1)];
+                const sinkStep = finding.flow_steps.find(s => s.step_type === 'sink') || finding.flow_steps[finding.flow_steps.length - 1];
+
+                if (sourceStep) {
+                    document.getElementById('cfg-source-code').innerText = sourceStep.code_snippet || sourceStep.message;
+                }
+                if (propStep) {
+                    document.getElementById('cfg-prop-code').innerText = propStep.code_snippet || propStep.message;
+                }
+                document.getElementById('cfg-bifurcation-code').innerText = "TAINTED_UNSAFE ⊔ SANITIZED = TAINTED_UNSAFE [NO HUMAN GATE]";
+                if (sinkStep) {
+                    document.getElementById('cfg-sink-code').innerText = sinkStep.code_snippet || sinkStep.message;
+                }
+            } else {
+                // Static / Regex / Container finding
+                document.getElementById('cfg-source-code').innerText = `${finding.rule_id} (${finding.article})`;
+                document.getElementById('cfg-prop-code').innerText = finding.title;
+                document.getElementById('cfg-bifurcation-code').innerText = `Severity: ${finding.severity} | Fine: ${finding.max_fine}`;
+                document.getElementById('cfg-sink-code').innerText = finding.code_snippet || finding.message;
             }
         }
 
@@ -675,7 +709,7 @@
                     document.getElementById('dropzone').innerHTML = `
                         <span class="material-symbols-outlined text-cyber-emerald text-[42px]">check_circle</span>
                         <span class="font-mono text-xs text-cyber-emerald font-bold">${file.name} (Loaded)</span>
-                        <span class="font-mono text-[10px] text-text-muted">Signer: ${bundle.signer_id || 'Unknown'}</span>
+                        <span class="font-mono text-[10px] text-text-muted">Signer: ${bundle.signer_identity || bundle.signer_id || 'Unknown'}</span>
                     `;
                 } catch (err) {
                     alert("Invalid JSON evidence bundle");
