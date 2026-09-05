@@ -46,6 +46,9 @@ INFRA_FILENAMES = {
 def is_scannable_file(path: Path) -> bool:
     """Determina si un archivo debe ser incluido en el escaneo estático o de infraestructura."""
     name_lower = path.name.lower()
+    # Ignorar artefactos de auditoría autogenerados por el propio escáner
+    if name_lower.endswith(".evidence.json") or name_lower.endswith(".sarif") or name_lower.endswith(".sarif.json"):
+        return False
     suffix_lower = path.suffix.lower()
     if suffix_lower in TEXT_EXTENSIONS:
         return True

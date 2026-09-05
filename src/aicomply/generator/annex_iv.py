@@ -29,7 +29,7 @@ class AnnexIVGenerator:
 
         for file_path in py_files:
             try:
-                source = file_path.read_text(encoding="utf-8", errors="ignore")
+                source = file_path.read_text(encoding="utf-8-sig", errors="ignore")
                 tree = ast.parse(source, filename=str(file_path))
                 for node in ast.walk(tree):
                     if isinstance(node, ast.Import):

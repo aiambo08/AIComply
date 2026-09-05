@@ -46,7 +46,7 @@ class RegexScanner:
         rel_path = str(file_path.relative_to(base_path)) if base_path else str(file_path)
 
         try:
-            lines = file_path.read_text(encoding="utf-8").splitlines()
+            lines = file_path.read_text(encoding="utf-8-sig").splitlines()
         except (UnicodeDecodeError, PermissionError):
             return findings
         

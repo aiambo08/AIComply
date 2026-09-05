@@ -37,7 +37,7 @@ class DockerScanner:
         rel_path = str(file_path.relative_to(base_path)) if base_path else str(file_path)
 
         try:
-            content = file_path.read_text(encoding="utf-8")
+            content = file_path.read_text(encoding="utf-8-sig")
         except Exception:
             return []
 

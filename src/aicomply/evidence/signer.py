@@ -147,19 +147,22 @@ def verify_evidence_bundle(
     Retorna (es_valido, mensaje_descriptivo).
     """
     # 1. Parsear el paquete a SignedEvidenceBundle
-    if isinstance(bundle_input, Path) or (isinstance(bundle_input, str) and Path(bundle_input).exists()):
-        raw_text = Path(bundle_input).read_text(encoding="utf-8")
-        bundle_dict = json.loads(raw_text)
-        bundle = SignedEvidenceBundle.model_validate(bundle_dict)
-    elif isinstance(bundle_input, str):
-        bundle_dict = json.loads(bundle_input)
-        bundle = SignedEvidenceBundle.model_validate(bundle_dict)
-    elif isinstance(bundle_input, dict):
-        bundle = SignedEvidenceBundle.model_validate(bundle_input)
-    elif isinstance(bundle_input, SignedEvidenceBundle):
-        bundle = bundle_input
-    else:
-        return False, "Tipo de entrada de paquete de evidencias no válido."
+    try:
+        if isinstance(bundle_input, Path) or (isinstance(bundle_input, str) and Path(bundle_input).exists()):
+            raw_text = Path(bundle_input).read_text(encoding="utf-8-sig")
+            bundle_dict = json.loads(raw_text)
+            bundle = SignedEvidenceBundle.model_validate(bundle_dict)
+        elif isinstance(bundle_input, str):
+            bundle_dict = json.loads(bundle_input)
+            bundle = SignedEvidenceBundle.model_validate(bundle_dict)
+        elif isinstance(bundle_input, dict):
+            bundle = SignedEvidenceBundle.model_validate(bundle_input)
+        elif isinstance(bundle_input, SignedEvidenceBundle):
+            bundle = bundle_input
+        else:
+            return False, "Tipo de entrada de paquete de evidencias no válido."
+    except Exception as exc:
+        return False, f"Error al parsear el paquete de evidencias: {exc}"
 
     # 2. Cargar clave pública
     try:

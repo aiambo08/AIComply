@@ -177,7 +177,7 @@ class PythonASTScanner:
         rel_path = str(file_path.relative_to(base_path)) if base_path else str(file_path)
 
         try:
-            source = file_path.read_text(encoding="utf-8")
+            source = file_path.read_text(encoding="utf-8-sig")
             tree = ast.parse(source, filename=str(file_path))
         except Exception:
             # Archivo con sintaxis rota, encoding corrupto o inaccesible se omite de AST
