@@ -15,8 +15,9 @@ El responsable autorizó actualizar las siete expectativas incompatibles con
 los contratos de seguridad y prudencia jurídica. La suite completa pasa
 **502 pruebas** y el gate integrado local de distribución termina correctamente.
 No se han desactivado pruebas, rebajado umbrales ni añadido `|| true`.
-Quedan la comprobación remota de esta revisión, la decisión de política del
-autoescaneo y las condiciones operativas y regulatorias detalladas abajo.
+La matriz remota de calidad pasa en Python 3.11 y 3.13 sobre `f4ac0e6`.
+Quedan la decisión de política del autoescaneo y las condiciones operativas y
+regulatorias detalladas abajo.
 
 El [system prompt especializado](AGENT_SYSTEM_PROMPT.md) fue aplicado a la
 implementación: evidencia antes que afirmaciones, revisión normativa contextual,
@@ -94,7 +95,7 @@ Entorno local: Linux, CPython 3.11.13, uv 0.8.22 y dependencias de `uv.lock`.
 | API HTTP por tests automatizados | Verificada; no equivale a una prueba visual de navegador |
 | Recorrido de consola en Chrome con proyectos sintéticos | Escaneo, detalles/SARIF, evaluación contextual, Anexo IV y verificación de evidencia comprobados; inputs adversariales rechazados |
 | Accesibilidad completa, concurrencia y presupuestos exhaustivos | **No verificados** |
-| Matriz remota Python 3.11/3.13 | Pendiente de ejecución sobre los contratos actualizados; la revisión anterior reproducía los siete fallos |
+| Matriz remota Python 3.11/3.13 | Correcta en `f4ac0e6`, incluidos build e instalación; consultar los checks de la PR para revisiones posteriores |
 
 Los 126 tests de los módulos modificados también pasaron antes del gate completo.
 La validación local del paquete no sustituye los demás controles de lanzamiento
@@ -158,10 +159,12 @@ No basta quitar el rechazo de aliases en un solo parser.
 
 ### Autoescaneo del repositorio
 
-El autoescaneo produce señales sobre el ejemplo deliberadamente riesgoso de
-fintech y coincidencias sobre literales del propio catálogo/analizador.
+El autoescaneo con la política por defecto produce 23 señales: 18 sobre el
+ejemplo deliberadamente riesgoso de fintech y cinco sobre literales del propio
+catálogo/analizador (tres patrones regex, una remediación y un comentario).
 No demuestra infracciones legales ni vulnerabilidades ejecutadas.
-El workflow de compliance propagará ese resultado con su política por defecto.
+El comando local termina con código 1. El workflow de compliance sobre `f4ac0e6`
+también propaga ese código y sube el SARIF correctamente.
 
 Antes de exigir ese check para merge, el mantenedor debe decidir la política
 de revisión para muestras y reglas del escáner: separar explícitamente fixtures
@@ -190,8 +193,8 @@ completo contra vulnerabilidades del intérprete.
 
 ### Gates del candidato local
 
-- Confirmar la matriz remota de calidad tras los contratos ya aprobados y
-  resolver la política del autoescaneo sin exclusiones de emergencia.
+- Resolver la política del autoescaneo sin exclusiones de emergencia y exigir
+  los gates de calidad en cada revisión candidata a publicación.
 - Fijar ground truth del benchmark con datos autorizados, revisión experta,
   versión de reglas y método de medición; añadir repositorios representativos.
 - Cotejar con asesoría jurídica el texto consolidado y acto modificativo del
