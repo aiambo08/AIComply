@@ -1,70 +1,66 @@
-"""
-AIComply - Markdown Report Generator
-Salida en formato tabla y bloques de texto scannable para CLI y GitHub Step Summaries.
-"""
+"""Plain-text-safe Markdown reports of technical signals."""
 
-from aicomply.classifier.risk_tier import classify_overall_risk
+from html import escape
+import re
+import unicodedata
+
 from aicomply.schemas import ScanReport
 
 
+def display_text(value: str) -> str:
+    return "".join(
+        f"\\u{ord(char):04x}"
+        if unicodedata.category(char).startswith("C") and char not in "\n\t"
+        else char for char in value
+    )
+
+
+def safe_text(value: str) -> str:
+    value = display_text(value)
+    value = re.sub(r"([\\`*_\[\]{}()#+>~])", r"\\\1", escape(value))
+    return value.replace("|", "&#124;").replace("\n", " / ").replace("\r", "")
+
+
 def generate_markdown_report(report: ScanReport, include_evidence: bool = False) -> str:
-    """Genera un reporte legible en Markdown estructurado."""
-    overall_tier = classify_overall_risk(report.findings)
-
     lines = [
-        "# AIComply — Reporte de Cumplimiento EU AI Act",
-        f"\n**Target:** `{report.target_path}` | **Scan ID:** `{report.scan_id[:12]}` | **Timestamp:** `{report.timestamp}`",
-        f"**Clasificación Global:** `{overall_tier.value.upper()}`\n",
-        "## Resumen Ejecutivo\n",
-        "| Métrica | Valor |",
-        "|---|---|",
-        f"| Archivos analizados | {report.summary.total_files_scanned} |",
-        f"| Líneas de código | {report.summary.total_lines_scanned:,} |",
-        f"| Reglas aplicadas | {report.summary.rules_loaded} |",
-        f"| Hallazgos totales | {report.summary.total_findings} |",
-        f"| Tiempo de ejecución | {report.summary.execution_time_ms} ms |",
+        "# AIComply — Revisión técnica EU AI Act / RGPD",
         "",
-        "### Hallazgos por Nivel de Riesgo\n",
-        "| Nivel de Riesgo | Cantidad |",
-        "|---|---|",
+        "> La aplicabilidad normativa y la clasificación jurídica requieren revisión humana.",
+        "> Los máximos sancionadores son referencias; no son predicciones ni multas evitadas.",
+        "",
+        f"**Target:** {safe_text(report.target_path)}",
+        f"**Scan ID (hallazgos):** {safe_text(report.scan_id)}",
+        f"**Manifiesto de fuentes:** {safe_text(report.source_manifest_hash or 'No disponible')}",
+        f"**Catálogo:** {safe_text(report.rules_fingerprint or 'No disponible')}",
+        f"**Configuración:** {safe_text(report.config_fingerprint or 'No disponible')}",
+        "",
+        "## Alcance",
+        f"- Archivos analizados: {report.summary.total_files_scanned}",
+        f"- Líneas de texto analizadas: {report.summary.total_lines_scanned}",
+        f"- Reglas activas: {report.summary.rules_loaded}",
+        f"- Rutas excluidas: {len(report.exclusions)} (detalle en JSON)",
+        f"- Señales técnicas: {report.summary.total_findings}",
+        "",
+        "## Limitaciones",
+        *[f"- {safe_text(item)}" for item in report.limitations],
+        "",
     ]
-
-    for tier, count in report.summary.findings_by_tier.items():
-        lines.append(f"| {tier.value.replace('_', ' ').title()} | {count} |")
-
     if not report.findings:
-        lines.append("\n> **Conformidad validada:** No se detectaron patrones de riesgo con el catálogo de reglas cargado.")
-        return "\n".join(lines)
-
-    lines.extend([
-        "\n## Detalle de No-Conformidades Detectadas\n",
-        "| Severidad | Artículo | Regla | Ubicación | Multa Potencial |",
-        "|---|---|---|---|---|",
-    ])
-
-    for f in report.findings:
-        loc = f"{f.location.file_path}:{f.location.start_line}"
-        lines.append(f"| **{f.severity.value}** | {f.article} | {f.title} | `{loc}` | {f.max_fine} |")
-
-    lines.append("\n## Planes de Remediación Técnica\n")
-
-    for idx, f in enumerate(report.findings, start=1):
+        lines.append("**Sin hallazgos en el alcance analizado. No acredita conformidad legal.**")
+    for index, finding in enumerate(report.findings, 1):
         lines.extend([
-            f"### {idx}. [{f.rule_id}] {f.title}",
-            f"- **Artículo:** {f.article} ({f.risk_tier.value})",
-            f"- **Ubicación:** `{f.location.file_path}:{f.location.start_line}`",
-            f"- **Multa evitada:** {f.max_fine}",
-            f"- **Remediación:** {f.remediation}",
+            f"## {index}. {safe_text(finding.rule_id)} — {safe_text(finding.title)}",
+            f"- Severidad técnica: {finding.severity.value}; confianza del patrón: {finding.confidence.value}",
+            f"- Referencia a revisar: {safe_text(finding.article)}",
+            f"- Etiqueta del catálogo: {finding.risk_tier.value}",
+            f"- Ubicación: {safe_text(finding.location.file_path)}:{finding.location.start_line}",
+            f"- Observación: {safe_text(finding.message)}",
+            f"- Remediación propuesta: {safe_text(finding.remediation)}",
+            f"- Máximo normativo de referencia: {safe_text(finding.max_fine)}",
         ])
-        if f.code_snippet:
-            lines.extend([
-                "- **Código detectado:**",
-                "```python",
-                f.code_snippet,
-                "```",
-            ])
+        if finding.code_snippet:
+            lines.extend(["", "<pre>" + escape(display_text(finding.code_snippet)) + "</pre>"])
         if include_evidence:
-            lines.append(f"- **Hash SHA-256:** `{f.id}`")
+            lines.append(f"- Hash de hallazgo: {safe_text(finding.id)}")
         lines.append("")
-
     return "\n".join(lines)

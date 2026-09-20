@@ -3,30 +3,28 @@ AIComply - CLI Entrypoint (Typer)
 """
 
 from enum import Enum
+import os
 from pathlib import Path
-import sys
+import tempfile
 from typing import Optional, Set
-
-if hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-if hasattr(sys.stderr, "reconfigure"):
-    try:
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
+from aicomply.classifier.risk_tier import TIER_HIERARCHY
+from aicomply.config import checked_path, load_project_config
+from aicomply.evidence.signer import generate_keypair, sign_scan_report, verify_evidence_bundle
 from aicomply.reporter.json_report import generate_json_report
 from aicomply.reporter.markdown_report import generate_markdown_report
 from aicomply.reporter.terminal import render_terminal_report
 from aicomply.reporter.sarif_reporter import generate_sarif_report
 from aicomply.rules.loader import RuleLoadError, load_rules_from_dir
 from aicomply.scanner.engine import ScanEngine
+from aicomply.schemas import RiskTier
+from aicomply.ui.server import start_ui_server
 
 from aicomply.classifier.assess import (
     render_assessment_report,
@@ -42,6 +40,26 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
+error_console = Console(stderr=True, markup=False)
+
+
+def write_report(output: Path, content: str) -> None:
+    parent = checked_path(output.parent)
+    destination = parent / output.name
+    if destination.exists() or destination.is_symlink():
+        checked_path(destination)
+        if not destination.is_file():
+            raise ValueError("La salida debe ser un archivo regular")
+    fd, filename = tempfile.mkstemp(prefix=".aicomply-", dir=parent)
+    staged = Path(filename)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(staged, destination)
+    finally:
+        staged.unlink(missing_ok=True)
 
 @app.callback()
 def main() -> None:
@@ -67,7 +85,7 @@ def scan(
         ...,
         help="Ruta al archivo o directorio a auditar.",
         exists=True,
-        resolve_path=True,
+        resolve_path=False,
     ),
     format: OutputFormat = typer.Option(
         OutputFormat.TERMINAL,
@@ -113,26 +131,35 @@ def scan(
         "--rules-dir",
         help="Directorio personalizado de reglas YAML.",
     ),
+    enforce_risk_tier: Optional[RiskTier] = typer.Option(
+        None, "--enforce-risk-tier",
+        help="Máxima etiqueta técnica tolerada; falla si un hallazgo la supera. Sin umbral falla con cualquier hallazgo.",
+    ),
 ) -> None:
-    """Escanea el código fuente en busca de infracciones del EU AI Act y RGPD."""
+    """Detecta señales técnicas que requieren revisión contextual EU AI Act / RGPD."""
     rules_path = rules_dir or get_default_rules_dir()
+    if sign and (format != OutputFormat.JSON or not key):
+        error_console.print("Firmar requiere --format json y --key; otros formatos no conservan la firma.")
+        raise typer.Exit(code=2)
 
     try:
         catalog = load_rules_from_dir(rules_path)
     except RuleLoadError as err:
-        console.print(f"[bold red]Error al cargar el catálogo de reglas:[/bold red] {err}")
+        error_console.print(f"Error al cargar el catálogo de reglas: {err}")
         raise typer.Exit(code=2)
 
     target_articles: Optional[Set[str]] = None
     if articles:
         target_articles = {art.strip() for art in articles.split(",") if art.strip()}
 
-    engine = ScanEngine(catalog=catalog, target_articles=target_articles)
-
     try:
+        config = load_project_config(path if path.is_dir() else path.parent)
+        if enforce_risk_tier is not None:
+            config = config.model_copy(update={"enforce_risk_tier": enforce_risk_tier.value})
+        engine = ScanEngine(catalog=catalog, target_articles=target_articles, config=config)
         report = engine.scan_path(path)
     except Exception as exc:
-        console.print(f"[bold red]Error durante la ejecución del escaneo:[/bold red] {exc}")
+        error_console.print(f"Error durante la ejecución del escaneo: {exc}")
         raise typer.Exit(code=2)
 
     # Firma asimétrica Ed25519 si se solicitó
@@ -141,8 +168,11 @@ def scan(
         if not key or not key.exists():
             console.print("[bold red]Error: Debe especificar una clave privada existente con --key para firmar.[/bold red]")
             raise typer.Exit(code=2)
-        from aicomply.evidence.signer import sign_scan_report
-        signed_bundle = sign_scan_report(report, key, signer_identity=signer_id)
+        try:
+            signed_bundle = sign_scan_report(report, key, signer_identity=signer_id)
+        except (ValueError, OSError, TypeError) as exc:
+            error_console.print(f"Error de firma: {exc}")
+            raise typer.Exit(code=2)
 
     # Gestión de salida según formato
     if output:
@@ -155,8 +185,12 @@ def scan(
         else:
             content = generate_markdown_report(report, include_evidence=evidence)
 
-        output.write_text(content, encoding="utf-8")
-        console.print(f"[green]Reporte guardado exitosamente en:[/green] {output}")
+        try:
+            write_report(output, content)
+        except (ValueError, OSError) as exc:
+            error_console.print(f"Error al guardar reporte: {exc}")
+            raise typer.Exit(code=2)
+        console.print(Text(f"Reporte guardado en: {output}"))
     else:
         if signed_bundle and format == OutputFormat.JSON:
             typer.echo(signed_bundle.model_dump_json(indent=2))
@@ -171,7 +205,13 @@ def scan(
             if signed_bundle:
                 console.print(f"[bold green][✓] Reporte firmado con Ed25519 (Huella: {signed_bundle.public_key_fingerprint})[/bold green]")
 
-    if report.summary.total_findings > 0:
+    threshold = engine.config.enforce_risk_tier
+    if threshold is None:
+        failed = bool(report.findings)
+    else:
+        allowed = TIER_HIERARCHY.index(RiskTier(threshold))
+        failed = any(TIER_HIERARCHY.index(f.risk_tier) < allowed for f in report.findings)
+    if failed:
         raise typer.Exit(code=1)
     raise typer.Exit(code=0)
 
@@ -192,16 +232,12 @@ def keygen(
     ),
 ) -> None:
     """Genera un nuevo par de claves asimétricas Ed25519 para firma de evidencias."""
-    from aicomply.evidence.signer import generate_keypair
-    from rich.panel import Panel
-    from rich.table import Table
-
     try:
         priv_path, pub_path, fingerprint = generate_keypair(out_dir, name)
 
         table = Table(show_header=False, box=None)
-        table.add_row("[bold cyan]Clave Privada (PKCS8 PEM):[/bold cyan]", f"[yellow]{priv_path}[/yellow]")
-        table.add_row("[bold cyan]Clave Pública (X.509 PEM):[/bold cyan]", f"[green]{pub_path}[/green]")
+        table.add_row("[bold cyan]Clave Privada (PKCS8 PEM):[/bold cyan]", Text(str(priv_path)))
+        table.add_row("[bold cyan]Clave Pública (X.509 PEM):[/bold cyan]", Text(str(pub_path)))
         table.add_row("[bold cyan]Huella Digital (SHA-256):[/bold cyan]", f"[magenta]{fingerprint}[/magenta]")
 
         panel = Panel(
@@ -211,7 +247,7 @@ def keygen(
         )
         console.print(panel)
     except Exception as exc:
-        console.print(f"[bold red]Error al generar el par de claves:[/bold red] {exc}")
+        error_console.print(f"Error al generar el par de claves: {exc}")
         raise typer.Exit(code=2)
 
 
@@ -233,21 +269,17 @@ def verify(
     ),
 ) -> None:
     """Verifica matemáticamente la autenticidad e integridad de un reporte firmado (Ed25519)."""
-    from aicomply.evidence.signer import verify_evidence_bundle
-    from rich.panel import Panel
-    from rich.table import Table
-
     is_valid, msg = verify_evidence_bundle(evidence_file, public_key)
 
     table = Table(show_header=False, box=None)
-    table.add_row("[bold cyan]Archivo Verificado:[/bold cyan]", f"{evidence_file}")
-    table.add_row("[bold cyan]Clave Pública:[/bold cyan]", f"{public_key}")
-    table.add_row("[bold cyan]Resultado:[/bold cyan]", f"{msg}")
+    table.add_row("[bold cyan]Archivo Verificado:[/bold cyan]", Text(str(evidence_file)))
+    table.add_row("[bold cyan]Clave Pública:[/bold cyan]", Text(str(public_key)))
+    table.add_row("[bold cyan]Resultado:[/bold cyan]", Text(msg))
 
     if is_valid:
         panel = Panel(
             table,
-            title="[bold green]VERIFICACIÓN EXITOSA — Evidencia Auténtica e Inalterada[/bold green]",
+            title="[bold green]VERIFICACIÓN EXITOSA — Integridad respecto a la clave suministrada[/bold green]",
             border_style="green",
         )
         console.print(panel)
@@ -275,7 +307,7 @@ def docgen(
         ...,
         help="Ruta al repositorio del proyecto para auditar y documentar.",
         exists=True,
-        resolve_path=True,
+        resolve_path=False,
     ),
     system_name: str = typer.Option(
         "AI-Production-System",
@@ -301,22 +333,25 @@ def docgen(
         help="Directorio personalizado de reglas YAML.",
     ),
 ) -> None:
-    """Genera el Dossier de Documentación Técnica formal exigido por el Anexo IV del EU AI Act."""
+    """Genera un borrador de los nueve puntos del Anexo IV con evidencias pendientes."""
     rules_path = rules_dir or get_default_rules_dir()
 
     try:
         catalog = load_rules_from_dir(rules_path)
     except RuleLoadError as err:
-        console.print(f"[bold red]Error al cargar catálogo de reglas:[/bold red] {err}")
+        error_console.print(f"Error al cargar catálogo de reglas: {err}")
         raise typer.Exit(code=2)
 
     engine = ScanEngine(catalog=catalog)
 
-    with console.status("[bold cyan]Analizando arquitectura y generando expediente Anexo IV...[/bold cyan]"):
+    try:
         report = engine.scan_path(path)
         generator = AnnexIVGenerator(report, system_name=system_name, version=system_version)
         dossier_md = generator.generate_markdown_dossier()
-        output.write_text(dossier_md, encoding="utf-8")
+        write_report(output, dossier_md)
+    except (ValueError, OSError, RuleLoadError) as exc:
+        error_console.print(f"No se pudo generar el borrador: {exc}")
+        raise typer.Exit(code=2)
 
 @app.command(name="ui")
 def ui(
@@ -342,28 +377,29 @@ def ui(
     ),
 ) -> None:
     """Inicia la consola visual e interactiva local de cumplimiento y trazabilidad (AIComply Cockpit)."""
-    resolved_path = path.resolve()
+    resolved_path = path.absolute()
     if not resolved_path.exists():
         console.print(f"[bold red]Error:[/bold red] La ruta indicada no existe: [yellow]{path}[/yellow] (Resuelta: {resolved_path})")
         raise typer.Exit(code=2)
-
-    from aicomply.ui.server import start_ui_server
-    from rich.panel import Panel
 
     url = f"http://{host}:{port}"
     console.print()
     console.print(f"  [bold green]●[/bold green] [bold cyan]AIComply Interactive Cockpit ONLINE[/bold cyan]")
     console.print(f"  [bold]Acceso Web:[/bold]            [bold green underline]{url}[/bold green underline]")
-    console.print(f"  [bold]Repositorio Objetivo:[/bold]  [yellow]{resolved_path}[/yellow]")
+    console.print(Text(f"  Repositorio Objetivo: {resolved_path}"))
     console.print(f"  [dim]Presione Ctrl+C en esta terminal para detener el servidor web.[/dim]")
     console.print()
 
-    server = start_ui_server(
-        target_path=resolved_path,
-        host=host,
-        port=port,
-        open_browser=not no_browser,
-    )
+    try:
+        server = start_ui_server(
+            target_path=resolved_path,
+            host=host,
+            port=port,
+            open_browser=not no_browser,
+        )
+    except (ValueError, OSError) as exc:
+        error_console.print(f"No se pudo iniciar la consola: {exc}")
+        raise typer.Exit(code=2)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

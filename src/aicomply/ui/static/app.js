@@ -147,11 +147,16 @@ async function evaluateStatutoryAssessment() {
     text('wizard-tier-title', 'ASSESSMENT PENDING');
     text('wizard-tier-badge', 'NOT ASSESSED');
     element('wizard-obligations-list').replaceChildren();
+    const context = {
+        system_name: element('wizard-sys-name').value || 'AI System',
+        intended_purpose: element('wizard-purpose').value,
+        role: element('wizard-role').value,
+    };
+    for (const select of document.querySelectorAll('[data-context]')) {
+        context[select.dataset.context] = select.value === '?' ? null : select.value === 'yes';
+    }
     const data = await request('/api/assess', {
-        name: element('wizard-sys-name').value,
-        q1: element('wizard-q1').value,
-        q2: element('wizard-q2').value,
-        q3: element('wizard-q3').value,
+        context,
     });
     text('wizard-tier-title', data.title);
     text('wizard-tier-badge', data.tier_badge);
@@ -172,11 +177,12 @@ async function handleEvidenceFile(file) {
     element('dropzone').replaceChildren(node('span', 'Select an evidence JSON file (up to 1 MiB).'));
     if (!file) return;
     if (file.size > MAX_EVIDENCE_BYTES) throw new Error('Evidence file exceeds the 1 MiB upload limit.');
-    const bundle = JSON.parse(await file.text());
+    const raw = await file.text();
+    const bundle = JSON.parse(raw);
     if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
         throw new Error('Evidence must be a JSON object.');
     }
-    uploadedBundle = bundle;
+    uploadedBundle = raw;
     element('dropzone').replaceChildren(
         node('span', `${file.name} (loaded, not verified)`, 'text-cyber-emerald text-xs font-mono'),
         node('span', `Unverified signer label: ${bundle.signer_identity || 'Unknown'}`, 'text-text-muted text-xs font-mono'),
@@ -235,6 +241,35 @@ function downloadDossierMD() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    const questions = [
+        ['is_ai', '¿Es un sistema de IA según el Art. 3?'],
+        ['eu_scope', '¿Está dentro del ámbito territorial del Art. 2?'],
+        ['prohibited_practice', '¿Hay indicios de prácticas del Art. 5, tras revisar condiciones y excepciones?'],
+        ['annex_i_product', '¿Es producto o componente de seguridad de un producto del Anexo I?'],
+        ['third_party_conformity', '¿La normativa del producto exige evaluación por terceros?'],
+        ['annex_iii_use', '¿Tiene una finalidad incluida en el Anexo III?'],
+        ['profiling', '¿Realiza perfilado de personas físicas?'],
+        ['narrow_exception', '¿Se ha documentado excepción del Art. 6(3), sin riesgo significativo ni influencia material?'],
+        ['transparency', '¿Interactúa con personas, genera contenido sintético o usa biometría/emociones sujeto al Art. 50?'],
+        ['gpai_provider', '¿La organización provee un modelo de propósito general (GPAI)?'],
+        ['personal_data', '¿Se tratan datos personales?'],
+        ['solely_automated_significant_decision', '¿Hay decisiones exclusivamente automatizadas con efectos jurídicos o similares significativos?'],
+    ];
+    for (const [key, question] of questions) {
+        const group = node('div', '', 'flex flex-col gap-2');
+        const label = node('label', question, 'text-xs text-text-secondary');
+        label.htmlFor = `context-${key}`;
+        const select = node('select', '', 'bg-obsidian border border-border-slate px-3.5 py-2 text-xs text-text-primary');
+        select.id = label.htmlFor;
+        select.dataset.context = key;
+        for (const [value, title] of [['?', 'Desconocido / pendiente'], ['yes', 'Sí'], ['no', 'No']]) {
+            const option = node('option', title);
+            option.value = value;
+            select.append(option);
+        }
+        group.append(label, select);
+        element('wizard-context').append(group);
+    }
     for (const button of document.querySelectorAll('[data-tab]')) {
         button.addEventListener('click', () => switchTab(button.dataset.tab));
     }

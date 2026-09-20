@@ -19,7 +19,7 @@
   severity: HIGH
   risk_tier: high_risk
   confidence: HIGH
-  description: "El contenedor o configuración de compose expone puertos de inferencia estándar (8000, 5000, 80) sin configuración de certificados TLS, permitiendo la interceptación de tráfico y datos confidenciales."
+  description: "Un puerto habitual de HTTP requiere revisar la topología y terminación TLS. EXPOSE o ports no demuestran ausencia de cifrado: puede existir TLS en un proxy o balanceador."
   remediation: "Configure terminación TLS mediante reverse proxy (Nginx, Traefik, Caddy) o habilite flags SSL nativas en el servidor ASGI/WSGI."
   max_fine: "15M€ o 3%"
   patterns:
@@ -34,9 +34,9 @@
   severity: CRITICAL
   risk_tier: high_risk
   confidence: HIGH
-  description: "El servicio en docker-compose tiene habilitado 'privileged: true' o ejecución directa bajo usuario root, otorgando acceso sin restricciones a los dispositivos del host y al kernel."
+  description: "El servicio declara modo privilegiado. Revisar necesidades, capacidades, aislamiento y controles efectivos; la configuración por sí sola no demuestra una infracción."
   remediation: "Desactive 'privileged: true' y restrinja los 'cap_add' exclusivamente a los recursos de GPU necesarios (ej. nvidia runtime)."
-  max_fine: "35M€ o 7%"
+  max_fine: "AI Act Art. 99(4): hasta 15M€ o 3%; RGPD Art. 83(4): hasta 10M€ o 2%, según aplicabilidad"
   patterns:
     - type: infra_docker
       target: "privileged_mode"

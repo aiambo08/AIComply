@@ -1,6 +1,6 @@
 """
 AIComply - Risk Tier Classifier
-Calcula la postura global de riesgo del repositorio basándose en la severidad y artículo de los hallazgos.
+Agrega etiquetas técnicas del catálogo; no clasifica jurídicamente el sistema.
 """
 
 from typing import List
@@ -18,8 +18,8 @@ TIER_HIERARCHY = [
 
 def classify_overall_risk(findings: List[Finding]) -> RiskTier:
     """
-    Determina el nivel de riesgo más restrictivo presente en el código escaneado.
-    Si no hay hallazgos, el sistema se cataloga como 'minimal_risk'.
+    Agrega la etiqueta más restrictiva entre las reglas que coinciden.
+    minimal_risk es el valor vacío de esta jerarquía, no una conclusión jurídica.
     """
     if not findings:
         return RiskTier.MINIMAL_RISK

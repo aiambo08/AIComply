@@ -264,7 +264,7 @@ class PythonASTScanner:
 
         if pattern.type == PatternType.AST_IMPORT:
             for imp_name, node in visitor.imports:
-                if target_lower in imp_name.lower():
+                if imp_name.lower() == target_lower or imp_name.lower().startswith(target_lower + "."):
                     results.append(self._create_finding(rule, pattern, node, visitor, rel_path))
 
         elif pattern.type == PatternType.AST_CALL:
@@ -289,14 +289,9 @@ class PythonASTScanner:
                     results.append(self._create_finding(rule, pattern, node, visitor, rel_path))
 
         elif pattern.type == PatternType.AST_ABSENCE:
-            # Detección de ausencia: evaluar llamadas a la librería/API del target cuando no hay logging
-            target_parts = [p.lower() for p in pattern.target.split(".") if p]
-            target_root = target_parts[0] if target_parts else ""
-
             matching_calls = [
                 (name, node) for name, node, _ in visitor.calls
-                if (target_root and target_root in name.lower())
-                or any(len(p) > 3 and p in name.lower() for p in target_parts)
+                if name.lower() == target_lower or name.lower().endswith("." + target_lower)
             ]
             if matching_calls and not visitor.has_logging:
                 for _, node in matching_calls:
@@ -348,7 +343,7 @@ class PythonASTScanner:
             severity=rule.severity,
             risk_tier=rule.risk_tier,
             title=rule.title,
-            message=f"Patrón detectado '{pattern.target}' en conformidad con {rule.article}.",
+            message=f"Patrón técnico '{pattern.target}'; revisar aplicabilidad de {rule.article}.",
             location=loc,
             code_snippet=snippet,
             remediation=rule.remediation,

@@ -21,6 +21,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
+from aicomply.classifier.assess import SystemContext, assess_context
 from aicomply.evidence.signer import compute_public_key_fingerprint, verify_evidence_bundle
 from aicomply.schemas import SignedEvidenceBundle
 
@@ -50,11 +51,12 @@ class ScanRequest(RequestModel):
 
 
 class VerifyRequest(RequestModel):
-    bundle: dict[str, JsonValue]
+    bundle: dict[str, JsonValue] | str
     public_key: str = Field(min_length=1, max_length=4096)
 
 
 class AssessRequest(RequestModel):
+    context: SystemContext | None = None
     name: str = Field(default="AI System", min_length=1, max_length=200)
     q1: Literal[
         "none", "social_scoring", "emotion_workplace",
@@ -101,43 +103,32 @@ def _check_json_limits(value: JsonValue) -> None:
 
 
 def provisional_assessment(request: AssessRequest) -> dict[str, JsonValue]:
-    """Preserve the legacy questionnaire contract without legal classification."""
-    concerns: list[JsonValue] = [{
-        "article": "Context required",
-        "desc": "Record purpose, EU nexus, roles, affected people, profiling, "
-                "significant effects, product safety and applicable exceptions. "
-                "This questionnaire does not determine legal applicability.",
-    }]
-    tier = "unknown"
-    title = "INSUFFICIENT CONTEXT — REVIEW REQUIRED"
-    if request.q1 != "none":
-        tier, title = "prohibited", "POTENTIAL ART. 5 CONCERN — REVIEW REQUIRED"
-        concerns.append({
-            "article": "Art. 5 review",
-            "desc": "Check the actual practice, statutory conditions and exceptions "
-                    "with a qualified reviewer; the selection is not proof of prohibition.",
-        })
-    if request.q2 != "none":
-        if tier == "unknown":
-            tier, title = "high_risk", "POTENTIAL ART. 6 CONCERN — REVIEW REQUIRED"
-        concerns.append({
-            "article": "Art. 6 / Annex I / Annex III review",
-            "desc": "Assess product and use-case classification, Art. 6(3) exceptions "
-                    "and the profiling override before identifying applicable duties.",
-        })
-    if request.q3 != "none":
-        if tier == "unknown":
-            tier, title = "limited_risk", "POTENTIAL ART. 50 CONCERN — REVIEW REQUIRED"
-        concerns.append({
-            "article": "Art. 50 / GPAI review",
-            "desc": "Check role-specific transparency conditions and exceptions. "
-                    "GPAI model-provider duties require a separate assessment.",
-        })
+    context = request.context or SystemContext(
+        system_name=request.name,
+        prohibited_practice=True if request.q1 != "none" else None,
+        annex_iii_use=True if request.q2 != "none" else None,
+        transparency=True if request.q3 != "none" else None,
+    )
+    result = assess_context(context)
+    tier = result.risk_tier.value if result.risk_tier else "unknown"
+    concerns: list[JsonValue] = [
+        {"article": "Review", "desc": obligation} for obligation in result.obligations
+    ]
+    concerns.extend([
+        {"article": "Pending context", "desc": ", ".join(result.missing_context)},
+        {"article": "Timeline", "desc": result.compliance_deadline},
+        {"article": "Sources", "desc": "\n".join(result.sources)},
+        {"article": "Review date", "desc": result.reviewed_on},
+    ])
     return {
         "tier": tier, "tier_badge": "PROVISIONAL — NOT A LEGAL CONCLUSION",
         "badge_class": "bg-alert-amber/20 border-alert-amber text-amber-300",
-        "title": title, "obligations": concerns,
+        "title": f"{tier.upper()} — REQUIERE REVISIÓN", "obligations": concerns,
         "provisional": True, "requires_review": True,
+        "missing_context": [name for name in result.missing_context],
+        "sources": [source for source in result.sources],
+        "reviewed_on": result.reviewed_on,
+        "articles": [article for article in result.applicable_articles],
     }
 
 
@@ -365,16 +356,27 @@ class AIComplyUIHandler(http.server.BaseHTTPRequestHandler):
                 public_key = serialization.load_pem_public_key(pem)
                 if not isinstance(public_key, Ed25519PublicKey):
                     raise ValueError("Expected Ed25519")
-                bundle = SignedEvidenceBundle.model_validate(request.bundle)
             except (ValueError, TypeError):
                 raise RequestError(400, "A valid evidence bundle and trusted Ed25519 public PEM are required") from None
-            valid, _ = verify_evidence_bundle(bundle, pem)
+            bundle_input: str | dict[str, object] = (
+                request.bundle if isinstance(request.bundle, str) else dict[str, object](request.bundle)
+            )
+            valid, _ = verify_evidence_bundle(bundle_input, pem)
+            bundle = None
+            if valid:
+                bundle = (
+                    SignedEvidenceBundle.model_validate_json(request.bundle)
+                    if isinstance(request.bundle, str)
+                    else SignedEvidenceBundle.model_validate(request.bundle)
+                )
             self._send_json({
                 "valid": valid,
                 "message": "Signature matches the supplied key; legal correctness and trusted time are not established."
                            if valid else "Evidence verification failed for the supplied key.",
-                "signer_id": bundle.signer_identity, "signed_at": bundle.timestamp,
-                "scan_id": bundle.report.scan_id, "fingerprint": compute_public_key_fingerprint(pem),
+                "signer_id": bundle.signer_identity if bundle else None,
+                "signed_at": bundle.timestamp if bundle else None,
+                "scan_id": bundle.report.scan_id if bundle else None,
+                "fingerprint": compute_public_key_fingerprint(pem),
             })
 
     def _handle(self) -> None:

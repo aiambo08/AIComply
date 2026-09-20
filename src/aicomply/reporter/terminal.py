@@ -13,15 +13,16 @@ from rich.table import Table
 from rich.text import Text
 
 from aicomply.classifier.risk_tier import classify_overall_risk
+from aicomply.reporter.markdown_report import display_text
 from aicomply.schemas import Finding, RiskTier, ScanReport, Severity
 from aicomply._version import __version__
 
 # Mapeo de estilos y etiquetas por Nivel de Riesgo
 RISK_TIER_STYLES = {
-    RiskTier.PROHIBITED: ("PROHIBIDO (Art.5)", "bold white on red"),
-    RiskTier.HIGH_RISK: ("ALTO RIESGO ", "bold red"),
-    RiskTier.LIMITED_RISK: ("RIESGO LIMITADO", "bold yellow"),
-    RiskTier.MINIMAL_RISK: ("RIESGO MINIMO", "bold green"),
+    RiskTier.PROHIBITED: ("REVISAR ART. 5", "bold white on red"),
+    RiskTier.HIGH_RISK: ("REVISAR ALTO RIESGO", "bold red"),
+    RiskTier.LIMITED_RISK: ("REVISAR TRANSPARENCIA", "bold yellow"),
+    RiskTier.MINIMAL_RISK: ("SIN ETIQUETA ELEVADA", "bold green"),
 }
 
 # Mapeo de etiquetas con badges para Severidad Técnica
@@ -45,6 +46,8 @@ def render_terminal_report(
     console = console or Console()
     overall_tier = classify_overall_risk(report.findings)
     tier_label, tier_style = RISK_TIER_STYLES.get(overall_tier, (overall_tier.value, "white"))
+    if not report.findings:
+        tier_label = "CLASIFICACIÓN JURÍDICA NO EVALUADA"
 
     # 1. Cabecerea principal
     header_table = Table.grid(expand=True)
@@ -52,14 +55,14 @@ def render_terminal_report(
     header_table.add_column(justify="right", ratio=2)
     header_table.add_row(
         f"[bold cyan]AIComply[/bold cyan] [dim]v{__version__}[/dim] - EU AI Act & GDPR Scanner",
-        f"[dim]Scan ID:[/dim] [bold]{report.scan_id[:12]}[/bold]",
+        Text(f"Scan ID: {display_text(report.scan_id[:12])}"),
     )
     header_table.add_row(
-        f"[dim]Target:[/dim] [white]{report.target_path}[/white]",
-        f"[dim]UTC:[/dim] {report.timestamp[:19].replace('T', ' ')}",
+        Text(f"Target: {display_text(report.target_path)}"),
+        Text(f"UTC: {display_text(report.timestamp[:19].replace('T', ' '))}"),
     )
     header_table.add_row(
-        f"[dim]Postura Global:[/dim] [{tier_style}] {tier_label} [/{tier_style}]",
+        f"[dim]Prioridad técnica:[/dim] [{tier_style}] {tier_label} [/{tier_style}]",
         f"[dim]Tiempo:[/dim] {report.summary.execution_time_ms:.2f} ms",
     )
 
@@ -67,7 +70,7 @@ def render_terminal_report(
     console.print(
         Panel(
             header_table,
-            title="[bold blue]AUDITORÍA DE CONFORMIDAD REGULATORIA[/bold blue]",
+            title="[bold blue]REVISIÓN TÉCNICA — REQUIERE CONTEXTO REGULATORIO[/bold blue]",
             border_style="bright_blue",
             box=box.ROUNDED,
         )
@@ -82,10 +85,10 @@ def render_terminal_report(
         title_justify="left",
     )
     summary_tables.add_column("Archivos", justify="center")
-    summary_tables.add_column("Líneas (SLOC)", justify="center")
+    summary_tables.add_column("Líneas de texto", justify="center")
     summary_tables.add_column("Reglas Evaluadas", justify="center")
     summary_tables.add_column("Hallazgos Totales", justify="center")
-    summary_tables.add_column("Prohibidos (P0)", justify="center")
+    summary_tables.add_column("Señales Art. 5", justify="center")
     summary_tables.add_column("Alto Riesgo (P1)", justify="center")
 
     summary_tables.add_row(
@@ -99,13 +102,15 @@ def render_terminal_report(
         str(report.summary.findings_by_tier[RiskTier.HIGH_RISK]),
     )
     console.print(summary_tables)
+    for limitation in report.limitations:
+        console.print(Text(display_text(limitation), style="dim"))
 
     # 3. Estado Limpio (Sin no-conformidades)
     if not report.findings:
         console.print(
             Panel(
-                "[bold green][OK] CONFORMIDAD TÉCNICA VALIDADA[/bold green]\n"
-                "[dim]No se detectaron patrones de incumplimiento normativo con el catálogo actual.[/dim]",
+                "[bold green]SIN HALLAZGOS EN EL ALCANCE ANALIZADO[/bold green]\n"
+                "[dim]No acredita conformidad legal ni garantiza ausencia de multas.[/dim]",
                 border_style="green",
                 box=box.ROUNDED,
             )
@@ -117,24 +122,24 @@ def render_terminal_report(
         box=box.MINIMAL_DOUBLE_HEAD,
         header_style="bold cyan",
         expand=True,
-        title="[bold]Matriz de No-Conformidades Detectadas[/bold]",
+        title="[bold]Señales Técnicas para Revisión[/bold]",
         title_justify="left",
     )
     findings_table.add_column("Severidad", justify="center", width=12)
     findings_table.add_column("Artículo", justify="left", width=14)
     findings_table.add_column("Regla / Título", justify="left", ratio=3)
     findings_table.add_column("Ubicación", justify="left", ratio=2)
-    findings_table.add_column("Multa Máxima", justify="right", width=16)
+    findings_table.add_column("Máximo normativo", justify="right", width=16)
 
     for f in report.findings:
         badge = SEVERITY_BADGES.get(f.severity, f.severity.value)
-        loc_str = f"[cyan]{f.location.file_path}[/cyan]:[bold yellow]{f.location.start_line}[/bold yellow]"
-        fine_str = f"[bold red]{f.max_fine}[/bold red]" if "35M" in f.max_fine or "7%" in f.max_fine else f"[yellow]{f.max_fine}[/yellow]"
+        loc_str = Text(f"{display_text(f.location.file_path)}:{f.location.start_line}")
+        fine_str = Text(display_text(f.max_fine))
         
         findings_table.add_row(
             badge,
-            f"[bold]{f.article}[/bold]",
-            f.title,
+            Text(display_text(f.article)),
+            Text(display_text(f.title)),
             loc_str,
             fine_str,
         )
@@ -149,19 +154,19 @@ def render_terminal_report(
         content_table.add_column(style="bold dim", width=16)
         content_table.add_column()
 
-        content_table.add_row("Regla:", f"[bold cyan]{f.rule_id}[/bold cyan] — {f.title}")
-        content_table.add_row("Artículo:", f"{f.article} (Nivel: [bold]{f.risk_tier.value}[/bold])")
-        content_table.add_row("Ubicación:", f"{f.location.file_path} (Líneas {f.location.start_line}-{f.location.end_line})")
-        content_table.add_row("Sanción Evitada:", f"[bold red]{f.max_fine}[/bold red]")
-        content_table.add_row("Acción Requerida:", f"[green]{f.remediation}[/green]")
+        content_table.add_row("Regla:", Text(display_text(f"{f.rule_id} — {f.title}")))
+        content_table.add_row("Artículo:", Text(display_text(f"{f.article} (Etiqueta: {f.risk_tier.value})")))
+        content_table.add_row("Ubicación:", Text(display_text(f"{f.location.file_path} (Líneas {f.location.start_line}-{f.location.end_line})")))
+        content_table.add_row("Máximo normativo:", Text(display_text(f.max_fine)))
+        content_table.add_row("Acción propuesta:", Text(display_text(f.remediation)))
 
         if include_evidence:
-            content_table.add_row("SHA-256:", f"[dim]{f.id}[/dim]")
+            content_table.add_row("SHA-256:", Text(display_text(f.id), style="dim"))
 
         # Render de snippet de código si existe
         if f.code_snippet:
             syntax = Syntax(
-                f.code_snippet,
+                display_text(f.code_snippet),
                 "python",
                 theme="monokai",
                 line_numbers=True,
@@ -179,7 +184,7 @@ def render_terminal_report(
         console.print(
             Panel(
                 panel_renderable,
-                title=f"[bold {border_color}]Hallazgo #{idx} — {f.rule_id}[/bold {border_color}]",
+                title=Text(display_text(f"Hallazgo #{idx} — {f.rule_id}"), style=f"bold {border_color}"),
                 border_style=border_color,
                 box=box.ROUNDED,
             )

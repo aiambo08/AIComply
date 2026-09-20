@@ -21,11 +21,12 @@ from typing import List, Optional, Set, Tuple
 import yaml
 
 from aicomply.config import (
-    AIComplyConfig, StrictSafeLoader, checked_path, load_project_config, read_regular_file,
+    AIComplyConfig, checked_path, load_policy_yaml, load_project_config, read_regular_file,
 )
 from aicomply.evidence.hasher import compute_scan_hash
 from aicomply.infra.dependency_scanner import DependencyScanner
 from aicomply.infra.docker_scanner import DockerScanner
+from aicomply.infra.input_reader import MAX_INPUT_BYTES
 from aicomply.rules.loader import RuleCatalog, load_rules_from_dir
 from aicomply.scanner.ast_parser import PythonASTScanner
 from aicomply.scanner.regex_matcher import RegexScanner
@@ -33,7 +34,7 @@ from aicomply.schemas import (
     Finding, RiskTier, Rule, ScanReport, ScanSummary, Severity, SourceManifestEntry,
 )
 
-MAX_SOURCE_BYTES = 10 * 1024 * 1024
+MAX_SOURCE_BYTES = MAX_INPUT_BYTES
 MAX_SCAN_BYTES = 100 * 1024 * 1024
 MAX_SCAN_ENTRIES = 10000
 IGNORED_DIRS = {
@@ -188,7 +189,7 @@ def _validate_source(path: Path, data: bytes) -> str:
             for section in ("default", "develop"):
                 _mapping(document.get(section, {}))
         elif "compose" in name and path.suffix.lower() in {".yaml", ".yml"}:
-            document = _mapping(yaml.load(text, Loader=StrictSafeLoader))
+            document = _mapping(load_policy_yaml(text))
             services = _mapping(document.get("services"))
             for service in services.values():
                 service = _mapping(service)
@@ -270,6 +271,7 @@ class ScanEngine:
         total_lines = 0
         total_bytes = 0
         manifest: List[SourceManifestEntry] = []
+        source_imports: dict[str, list[str]] = {}
         # Deduplicación cross-engine: (rule_id, file_path, start_line)
         seen_dedup_keys: Set[Tuple[str, str, int]] = set()
 
@@ -283,6 +285,14 @@ class ScanEngine:
                 text = _validate_source(original, data)
                 total_lines += len(text.splitlines())
                 relative = original.relative_to(base_dir)
+                if original.suffix.lower() in PYTHON_EXTENSIONS:
+                    imported: set[str] = set()
+                    for node in ast.walk(ast.parse(text)):
+                        if isinstance(node, ast.Import):
+                            imported.update(alias.name.split(".")[0] for alias in node.names)
+                        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                            imported.add(node.module.split(".")[0])
+                    source_imports[relative.as_posix()] = sorted(imported)
                 manifest.append(SourceManifestEntry(
                     path=relative.as_posix(), sha256=hashlib.sha256(data).hexdigest(),
                     size_bytes=len(data),
@@ -333,6 +343,7 @@ class ScanEngine:
             target_path=str(target_path),
             summary=summary,
             findings=findings,
+            source_imports=source_imports,
             source_manifest=manifest,
             source_manifest_hash=_fingerprint([entry.model_dump() for entry in manifest]),
             active_rule_ids=sorted(rule.id for rule in self.rules),

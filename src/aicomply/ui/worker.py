@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import resource
@@ -31,8 +32,11 @@ class SourceSnapshot:
     def __init__(self) -> None:
         self.entries = 0
         self.total_bytes = 0
+        self.exclusions: dict[str, str] = {}
+        self.destination = Path()
 
     def copy(self, root_fd: int, parts: list[str], filename: str, destination: Path) -> Path:
+        self.destination = destination
         descriptor = os.dup(root_fd)
         try:
             for index, part in enumerate(parts):
@@ -76,6 +80,11 @@ class SourceSnapshot:
             self.total_bytes += len(chunk)
             if size > MAX_FILE_BYTES or self.total_bytes > MAX_TOTAL_BYTES:
                 raise SnapshotError("Source bytes exceed console limits (2 MiB/file, 32 MiB total)")
+        after = os.fstat(descriptor)
+        if (metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns) != (
+            after.st_size, after.st_mtime_ns, after.st_ctime_ns,
+        ) or size != after.st_size:
+            raise SnapshotError("Source changed while copying; retry with a stable checkout")
         destination.write_bytes(b"".join(chunks))
 
     def _directory(self, descriptor: int, destination: Path, depth: int) -> None:
@@ -90,8 +99,10 @@ class SourceSnapshot:
                 if stat.S_ISLNK(mode) or not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
                     raise SnapshotError("Symbolic links and special files are not supported by the console")
                 if stat.S_ISDIR(mode) and entry.name in IGNORED_DIRS:
+                    self.exclusions[(destination / entry.name).relative_to(self.destination).as_posix()] = "console: ignored directory"
                     continue
                 if stat.S_ISREG(mode) and not is_scannable_file(Path(entry.name)):
+                    self.exclusions[(destination / entry.name).relative_to(self.destination).as_posix()] = "console: unsupported extension or generated report"
                     continue
                 flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
                 if stat.S_ISDIR(mode):
@@ -114,20 +125,36 @@ def main() -> None:
     request = json.loads(sys.stdin.buffer.read(16384))
     target = Path(request["target"])
     try:
-        snapshot = SourceSnapshot().copy(
+        copier = SourceSnapshot()
+        snapshot = copier.copy(
             request["root_fd"], request["relative_parts"], target.name, Path(request["snapshot_dir"]),
         )
         report = ScanEngine(catalog=load_builtin_rules()).scan_path(snapshot)
+        config = {
+            **report.effective_config,
+            "console_limits": {
+                "max_source_bytes": MAX_FILE_BYTES, "max_scan_bytes": MAX_TOTAL_BYTES,
+                "max_entries": MAX_ENTRIES, "max_depth": MAX_DEPTH,
+                "cpu_seconds": 20, "memory_bytes": 512 * 1024 * 1024,
+            },
+        }
+        report = report.model_copy(update={
+            "target_path": str(target),
+            "effective_config": config,
+            "config_fingerprint": hashlib.sha256(json.dumps(
+                config, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+            ).encode("utf-8")).hexdigest(),
+            "exclusions": {**copier.exclusions, **report.exclusions},
+        })
         if request["operation"] == "docgen":
             markdown = AnnexIVGenerator(
                 report, system_name=request["name"], version=request["version"],
             ).generate_markdown_dossier()
             result = json.dumps({
                 "markdown": "DRAFT FOR QUALIFIED REVIEW — not a compliance determination.\n\n"
-                            + markdown.replace(str(snapshot), str(target)),
+                            + markdown,
             })
         else:
-            report = report.model_copy(update={"target_path": str(target)})
             result = generate_sarif_report(report) if request["operation"] == "sarif" else report.model_dump_json()
         if len(result.encode("utf-8")) > MAX_OUTPUT_BYTES:
             raise SnapshotError("Result exceeds the 8 MiB console limit")

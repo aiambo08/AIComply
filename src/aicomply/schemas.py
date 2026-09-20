@@ -5,7 +5,7 @@ hallazgos de auditoría (findings) y reportes de conformidad.
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -146,7 +146,7 @@ class FlowStep(BaseModel):
 
 
 class Finding(BaseModel):
-    """Representación inmutable de una no-conformidad detectada."""
+    """Señal técnica cuya aplicabilidad normativa requiere contexto."""
     model_config = ConfigDict(frozen=True)
 
     id: str = Field(..., description="Hash SHA-256 determinista del hallazgo (para auditoría)")
@@ -185,7 +185,7 @@ class SourceManifestEntry(BaseModel):
 
 
 class ScanReport(BaseModel):
-    """Payload canónico del reporte de conformidad emitido por AIComply."""
+    """Resultados estáticos y procedencia; no es una evaluación jurídica."""
     model_config = ConfigDict(frozen=True)
 
     scan_id: str = Field(..., description="Hash SHA-256 del conjunto total de hallazgos")
@@ -193,6 +193,16 @@ class ScanReport(BaseModel):
     target_path: str
     summary: ScanSummary
     findings: List[Finding]
+    analysis_status: Literal["completed"] = "completed"
+    legal_assessment: Literal["not_assessed"] = "not_assessed"
+    limitations: List[str] = Field(default_factory=lambda: [
+        "Hallazgos heurísticos; no prueban infracciones ni clasificación jurídica del sistema.",
+        "Sin hallazgos no significa conformidad; revisar alcance, exclusiones y reglas.",
+        "Python AST/taint intraprocedural; otros lenguajes solo tienen patrones de texto.",
+        "No se evalúan datos reales, contratos, finalidad, medidas operativas ni comportamiento en ejecución.",
+        "Los máximos sancionadores son referencias normativas, no multas previstas o evitadas.",
+    ])
+    source_imports: Dict[str, List[str]] = Field(default_factory=dict)
     source_manifest: List[SourceManifestEntry] = Field(default_factory=list)
     source_manifest_hash: Optional[str] = Field(
         default=None, description="SHA-256 of sorted source manifest entries as canonical JSON"
