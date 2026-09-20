@@ -6,22 +6,29 @@ uv.lock y Pipfile para detectar dependencias de IA prohibidas y versiones vulner
 
 import json
 import re
+import tomllib
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
-
-try:
-    import tomllib  # Python >= 3.11
-except ImportError:
-    import tomli as tomllib  # Fallback si fuera necesario
+from typing import Dict, List, Optional, Set
 
 from aicomply.evidence.hasher import compute_finding_hash
+from aicomply.infra.input_reader import read_scan_text
 from aicomply.schemas import (
     CodeLocation,
     Finding,
     PatternType,
     Rule,
-    RulePattern,
 )
+
+
+def _package_name(value: str) -> str:
+    return re.sub(r"[-_.]+", "-", value).lower()
+
+
+def _table(parent: dict, name: str) -> dict:
+    value = parent.get(name, {})
+    if not isinstance(value, dict):
+        raise ValueError(f"Manifest field '{name}' must be a table")
+    return value
 
 
 class DependencyScanner:
@@ -38,12 +45,14 @@ class DependencyScanner:
             return []
 
         filename = file_path.name.lower()
+        if not (
+            filename in {"pyproject.toml", "uv.lock", "pipfile", "pipfile.lock"}
+            or filename.startswith("requirements") and filename.endswith(".txt")
+        ):
+            return []
         rel_path = str(file_path.relative_to(base_path)) if base_path else str(file_path)
 
-        try:
-            content = file_path.read_text(encoding="utf-8-sig")
-        except Exception:
-            return []
+        content = read_scan_text(file_path, base_path)
 
         lines = content.splitlines()
         suppressions = self._extract_suppressions(lines)
@@ -90,12 +99,12 @@ class DependencyScanner:
             if not pkg_match:
                 continue
 
-            pkg_name = pkg_match.group(1).lower().replace("_", "-")
+            pkg_name = _package_name(pkg_match.group(1))
 
             for rule in self.rules:
                 for pattern in rule.patterns:
                     if pattern.type == PatternType.INFRA_DEPENDENCY and pattern.target:
-                        target_norm = pattern.target.lower().replace("_", "-")
+                        target_norm = _package_name(pattern.target)
                         if target_norm == pkg_name:
                             # Comprobar supresiones
                             line_sups = suppressions.get(line_idx, set())
@@ -122,39 +131,41 @@ class DependencyScanner:
         suppressions: Dict[int, Set[str]],
     ) -> List[Finding]:
         findings: List[Finding] = []
-        try:
-            parsed = tomllib.loads(content)
-        except Exception:
-            return findings
+        parsed = tomllib.loads(content)
 
         # Extraer dependencias de [project.dependencies] y [project.optional-dependencies]
         declared_pkgs: Set[str] = set()
-        project_deps = parsed.get("project", {}).get("dependencies", [])
+        project = _table(parsed, "project")
+        project_deps = project.get("dependencies", [])
+        if not isinstance(project_deps, list) or not all(isinstance(dep, str) for dep in project_deps):
+            raise ValueError("Project dependencies must be a list of strings")
         if isinstance(project_deps, list):
             for dep in project_deps:
                 m = re.match(r"^([a-zA-Z0-9_\-\.]+)", str(dep).strip())
                 if m:
-                    declared_pkgs.add(m.group(1).lower().replace("_", "-"))
+                    declared_pkgs.add(_package_name(m.group(1)))
 
-        opt_deps = parsed.get("project", {}).get("optional-dependencies", {})
+        opt_deps = _table(project, "optional-dependencies")
         if isinstance(opt_deps, dict):
             for group, deps in opt_deps.items():
+                if not isinstance(deps, list) or not all(isinstance(dep, str) for dep in deps):
+                    raise ValueError("Optional dependencies must be lists of strings")
                 if isinstance(deps, list):
                     for dep in deps:
                         m = re.match(r"^([a-zA-Z0-9_\-\.]+)", str(dep).strip())
                         if m:
-                            declared_pkgs.add(m.group(1).lower().replace("_", "-"))
+                            declared_pkgs.add(_package_name(m.group(1)))
 
         # Poetry dependencies
-        poetry_deps = parsed.get("tool", {}).get("poetry", {}).get("dependencies", {})
+        poetry_deps = _table(_table(_table(parsed, "tool"), "poetry"), "dependencies")
         if isinstance(poetry_deps, dict):
             for k in poetry_deps.keys():
-                declared_pkgs.add(str(k).lower().replace("_", "-"))
+                declared_pkgs.add(_package_name(str(k)))
 
         for rule in self.rules:
             for pattern in rule.patterns:
                 if pattern.type == PatternType.INFRA_DEPENDENCY and pattern.target:
-                    target_norm = pattern.target.lower().replace("_", "-")
+                    target_norm = _package_name(pattern.target)
                     if target_norm in declared_pkgs:
                         # Buscar número de línea en el archivo
                         match_line = 1
@@ -187,23 +198,22 @@ class DependencyScanner:
         suppressions: Dict[int, Set[str]],
     ) -> List[Finding]:
         findings: List[Finding] = []
-        try:
-            parsed = tomllib.loads(content)
-        except Exception:
-            return findings
+        parsed = tomllib.loads(content)
 
         # En uv.lock, los paquetes están en [[package]] name = "..."
         packages = parsed.get("package", [])
         if not isinstance(packages, list):
-            return findings
+            raise ValueError("Lockfile packages must be a list of tables")
 
         for pkg in packages:
+            if not isinstance(pkg, dict) or not isinstance(pkg.get("name"), str):
+                raise ValueError("Lockfile package requires a string name")
             if isinstance(pkg, dict) and "name" in pkg:
-                pkg_name = str(pkg["name"]).lower().replace("_", "-")
+                pkg_name = _package_name(pkg["name"])
                 for rule in self.rules:
                     for pattern in rule.patterns:
                         if pattern.type == PatternType.INFRA_DEPENDENCY and pattern.target:
-                            target_norm = pattern.target.lower().replace("_", "-")
+                            target_norm = _package_name(pattern.target)
                             if target_norm == pkg_name:
                                 # Buscar la línea de este paquete en uv.lock
                                 match_line = 1
@@ -236,25 +246,41 @@ class DependencyScanner:
         suppressions: Dict[int, Set[str]],
     ) -> List[Finding]:
         findings: List[Finding] = []
-        for line_idx, line in enumerate(lines, start=1):
-            for rule in self.rules:
-                for pattern in rule.patterns:
-                    if pattern.type == PatternType.INFRA_DEPENDENCY and pattern.target:
-                        target_norm = pattern.target.lower().replace("_", "-")
-                        if target_norm in line.lower().replace("_", "-"):
-                            line_sups = suppressions.get(line_idx, set())
-                            if rule.id in line_sups or "ALL" in line_sups:
-                                continue
-
-                            finding = self._create_finding(
-                                rule=rule,
-                                target=pattern.target,
-                                rel_path=rel_path,
-                                start_line=line_idx,
-                                end_line=line_idx,
-                                snippet=line.strip(),
-                            )
-                            findings.append(finding)
+        if rel_path.lower().endswith(".lock"):
+            parsed = json.loads(content)
+            if not isinstance(parsed, dict):
+                raise ValueError("Pipfile.lock must contain an object")
+            sections = ("default", "develop")
+        else:
+            parsed = tomllib.loads(content)
+            sections = ("packages", "dev-packages")
+        packages = {
+            _package_name(name)
+            for section in sections for name in _table(parsed, section)
+        }
+        for rule in self.rules:
+            for pattern in rule.patterns:
+                if pattern.type != PatternType.INFRA_DEPENDENCY or not pattern.target:
+                    continue
+                target_norm = _package_name(pattern.target)
+                if target_norm not in packages:
+                    continue
+                line_idx = next(
+                    (idx for idx, line in enumerate(lines, start=1)
+                     if not line.lstrip().startswith("#") and target_norm in _package_name(line)),
+                    1,
+                )
+                line_sups = suppressions.get(line_idx, set())
+                if rule.id in line_sups or "ALL" in line_sups:
+                    continue
+                findings.append(self._create_finding(
+                    rule=rule,
+                    target=pattern.target,
+                    rel_path=rel_path,
+                    start_line=line_idx,
+                    end_line=line_idx,
+                    snippet=lines[line_idx - 1].strip(),
+                ))
         return findings
 
     def _create_finding(
