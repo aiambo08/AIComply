@@ -4,7 +4,7 @@ Emite resultados de análisis estático compatibles con Github Code Scanning
 """
 
 import json
-from typing import Any, Dict
+from urllib.parse import quote
 from aicomply.schemas import ScanReport, Severity
 from aicomply._version import __version__
 
@@ -19,7 +19,7 @@ SARIF_LEVEL_MAP = {
 
 def generate_sarif_report(report: ScanReport) -> str:
     """Convierte un ScanReport en un documento JSON SARIF v2.1.0 válido."""
-    rules_dict: Dict[str, Dict[str, Any]] = {}
+    rules_dict: dict[str, dict[str, object]] = {}
     results = []
 
     for f in report.findings:
@@ -30,7 +30,8 @@ def generate_sarif_report(report: ScanReport) -> str:
                 "name": f.rule_id.replace("-", "_"),
                 "shortDescription": {"text": f.title},
                 "fullDescription": {"text": f.message},
-                "helpUri": f"https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
+                "helpUri": "https://eur-lex.europa.eu/eli/reg/2016/679/oj"
+                if f.rule_id.startswith("GDPR") else "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
                 "properties": {
                     "article": f.article,
                     "risk_tier": f.risk_tier.value,
@@ -43,18 +44,19 @@ def generate_sarif_report(report: ScanReport) -> str:
         rule_index = list(rules_dict.keys()).index(f.rule_id)
 
         # Construir el resultado individual del hallazgo
-        result_item: Dict[str, Any] = {
+        result_item: dict[str, object] = {
             "ruleId": f.rule_id,
             "ruleIndex": rule_index,
             "level": SARIF_LEVEL_MAP.get(f.severity, "warning"),
             "message": {
-                "text": f"[{f.article}] {f.title}. Multa potencial: {f.max_fine}. Remediación: {f.remediation}"
+                "text": f"Señal técnica para revisión contextual [{f.article}] {f.title}. "
+                f"Máximo normativo de referencia, no multa prevista: {f.max_fine}. Remediación: {f.remediation}"
             },
             "locations": [
                 {
                     "physicalLocation": {
                         "artifactLocation": {
-                            "uri": f.location.file_path.replace("\\", "/")
+                            "uri": quote(f.location.file_path.replace("\\", "/"), safe="/")
                         },
                         "region": {
                             "startLine": f.location.start_line,
@@ -80,7 +82,7 @@ def generate_sarif_report(report: ScanReport) -> str:
                         "message": {"text": f"{step.step_type.upper()}: {step.message}"},
                         "physicalLocation": {
                             "artifactLocation": {
-                                "uri": step.location.file_path.replace("\\", "/")
+                                "uri": quote(step.location.file_path.replace("\\", "/"), safe="/")
                             },
                             "region": {
                                 "startLine": step.location.start_line,
@@ -125,6 +127,14 @@ def generate_sarif_report(report: ScanReport) -> str:
                     }
                 ],
                 "results": results,
+                "properties": {
+                    "legalAssessment": report.legal_assessment,
+                    "limitations": report.limitations,
+                    "sourceManifestHash": report.source_manifest_hash,
+                    "rulesFingerprint": report.rules_fingerprint,
+                    "configFingerprint": report.config_fingerprint,
+                    "exclusions": report.exclusions,
+                },
             }
         ],
     }

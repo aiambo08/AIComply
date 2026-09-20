@@ -1,6 +1,7 @@
 """
 AIComply - Precision & Recall Benchmark Suite (EU AI Act & GDPR SAST Engine)
-Evalúa formalmente la precisión (P), exhaustividad/recall (R) y F1-score del motor multimotor v2.0.
+Mide señales por archivo sobre un corpus sintético de regresión, no infracciones.
+No es una evaluación independiente de exactitud ni una prueba de conformidad.
 Objetivo de Calidad: Precision >= 95%, Recall >= 95%, F1-Score >= 95%.
 """
 
@@ -17,12 +18,12 @@ class BenchmarkCase(NamedTuple):
     case_id: str
     file_name: str
     content: str
-    expected_violation: bool
+    expected_finding: bool
     expected_rule_id: str = ""
     description: str = ""
 
 
-# 15 Casos Positivos Reales (True Positives esperados)
+# Casos sintéticos con señales esperadas.
 TRUE_POSITIVE_CASES: List[BenchmarkCase] = [
     BenchmarkCase(
         case_id="TP-01",
@@ -32,7 +33,7 @@ def run():
     res = openai.chat.completions.create(model='gpt-4o', messages=[])
     os.system(res.choices[0].message.content)
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART14-002",
         description="Propagación directa de salida de LLM a os.system",
     ),
@@ -47,7 +48,7 @@ def execute():
     raw = msg.content
     subprocess.run(raw, shell=True)
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART14-002",
         description="Salida de Anthropic propagada a subprocess.run",
     ),
@@ -61,7 +62,7 @@ def generate_user_reply():
     text = res.choices[0].message.content
     return jsonify(text=text)
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART50-003",
         description="Salida sintética emitida a sink directo jsonify sin moderación ni marca de agua",
     ),
@@ -71,7 +72,7 @@ def generate_user_reply():
         content="""import fer
 detector = fer.FER()
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART05-001",
         description="Importación de librería de reconocimiento de emociones fer",
     ),
@@ -81,7 +82,7 @@ detector = fer.FER()
         content="""def evaluate_candidate():
     score = compute_social_score(user_data)
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART05-002",
         description="Invocación de función prohibida de puntuación social",
     ),
@@ -89,7 +90,7 @@ detector = fer.FER()
         case_id="TP-06",
         file_name="api_secret.py",
         content='openai_api_key = "sk-proj-abcdef1234567890abcdef1234567890"\n',
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART15-002",
         description="Clave de API de OpenAI hardcodeada en texto plano",
     ),
@@ -97,7 +98,7 @@ detector = fer.FER()
         case_id="TP-07",
         file_name="prompt_inj.py",
         content='prompt = f"System prompt... User query: {user_input}"\n',
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART15-003",
         description="Interpolación no sanitizada en prompt f-string",
     ),
@@ -105,7 +106,7 @@ detector = fer.FER()
         case_id="TP-08",
         file_name="pii_dni.py",
         content='user_dni = "12345678Z"\npayload = f"Process DNI: {user_dni}"\n',
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="GDPR-ART05-002",
         description="Fuga de DNI español en código fuente",
     ),
@@ -113,7 +114,7 @@ detector = fer.FER()
         case_id="TP-09",
         file_name="tls_bypass.py",
         content='import requests\nrequests.post("https://api.model/v1", json={}, verify=False)\n',
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="GDPR-ART32-002",
         description="Desactivación de verificación TLS (verify=False)",
     ),
@@ -121,7 +122,7 @@ detector = fer.FER()
         case_id="TP-10",
         file_name="requirements.txt",
         content="fastapi>=0.100.0\ndeepface==0.0.79\n",
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART05-003",
         description="Dependencia prohibida deepface en requirements.txt",
     ),
@@ -133,7 +134,7 @@ name = "ai-app"
 version = "1.0.0"
 dependencies = ["face-recognition>=1.3.0"]
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART05-003",
         description="Dependencia prohibida face-recognition en pyproject.toml",
     ),
@@ -145,7 +146,7 @@ WORKDIR /app
 COPY . .
 CMD ["python", "main.py"]
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART15-004",
         description="Dockerfile sin directiva USER (ejecución como root)",
     ),
@@ -157,7 +158,7 @@ USER appuser
 EXPOSE 8000
 CMD ["uvicorn", "main:app"]
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART15-005",
         description="Dockerfile exponiendo puerto HTTP de inferencia 8000 sin TLS",
     ),
@@ -170,7 +171,7 @@ services:
     image: vllm/vllm
     privileged: true
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART15-006",
         description="Servicio en docker-compose con privileged: true",
     ),
@@ -186,14 +187,29 @@ def branch_test(flag):
     # En la rama else cmd sigue TAINTED_UNSAFE (operador join pesimista)
     os.system(cmd)
 """,
-        expected_violation=True,
+        expected_finding=True,
         expected_rule_id="EUAIA-ART14-002",
         description="Bifurcación condicional parcialmente sanitizada detectada por operador join pesimista",
+    ),
+    BenchmarkCase(
+        case_id="TP-16",
+        file_name="nominal_human_gate.py",
+        content="""import openai, os, logging
+def human_reviewed():
+    logging.info("Llamada con supervisión registrada")
+    res = openai.chat.completions.create(model='gpt-4o', messages=[])
+    cmd = res.choices[0].message.content
+    if human_approved:
+        os.system(cmd)
+""",
+        expected_finding=True,
+        expected_rule_id="EUAIA-ART14-002",
+        description="Una compuerta nominal no valida el comando procedente del LLM",
     ),
 ]
 
 
-# 15 Casos Negativos Reales / Conformidad (True Negatives esperados)
+# Casos sin señales según el catálogo; no prueban conformidad ni controles efectivos.
 TRUE_NEGATIVE_CASES: List[BenchmarkCase] = [
     BenchmarkCase(
         case_id="TN-01",
@@ -206,7 +222,7 @@ def clean_run():
     safe_cmd = guardrails.validate(raw)
     os.system(safe_cmd)
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Salida sanitizada con guardrails.validate y logging auditado",
     ),
     BenchmarkCase(
@@ -222,22 +238,8 @@ def safe_exec():
     model = ToolSchema.model_validate(res.choices[0].message.content)
     os.system(model.command)
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Salida validada mediante esquema estricto Pydantic y con logging",
-    ),
-    BenchmarkCase(
-        case_id="TN-03",
-        file_name="clean_human_gate.py",
-        content="""import openai, os, logging
-def human_reviewed():
-    logging.info("Llamada con supervisión registrada")
-    res = openai.chat.completions.create(model='gpt-4o', messages=[])
-    cmd = res.choices[0].message.content
-    if human_approved:
-        os.system(cmd)
-""",
-        expected_violation=False,
-        description="Ejecución de herramienta protegida por compuerta de autorización humana y logging",
     ),
     BenchmarkCase(
         case_id="TN-04",
@@ -250,7 +252,7 @@ def compliant_output():
     safe_text = ai_watermark(text)
     print(safe_text)
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Salida sintética con marca de agua/disclaimer de IA y logging",
     ),
     BenchmarkCase(
@@ -264,28 +266,28 @@ def moderated_output():
     clean_text = guardrails.validate(text)
     print(clean_text)
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Salida sintética validada con filtro de moderación y logging",
     ),
     BenchmarkCase(
         case_id="TN-06",
         file_name="clean_env_secrets.py",
         content='import os\napi_key = os.environ.get("OPENAI_API_KEY")\n',
-        expected_violation=False,
+        expected_finding=False,
         description="Credencial cargada de forma segura desde variable de entorno",
     ),
     BenchmarkCase(
         case_id="TN-07",
         file_name="clean_structured_messages.py",
         content='messages = [{"role": "system", "content": "You are a helpful assistant"}]\n',
-        expected_violation=False,
+        expected_finding=False,
         description="Mensajes estructurados sin interpolación vulnerable",
     ),
     BenchmarkCase(
         case_id="TN-08",
         file_name="clean_tls.py",
         content='import requests\nrequests.post("https://api.model/v1", json={}, verify=True)\n',
-        expected_violation=False,
+        expected_finding=False,
         description="Petición HTTPS segura con verificación de certificados TLS activada",
     ),
     BenchmarkCase(
@@ -298,7 +300,7 @@ RUN useradd -m appuser
 USER appuser
 CMD ["python", "main.py"]
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Dockerfile conforme con directiva USER appuser no privilegiada",
     ),
     BenchmarkCase(
@@ -310,14 +312,14 @@ services:
     image: myorg/api:1.0
     user: "1000:1000"
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Servicio docker-compose con usuario restringido y sin privileged",
     ),
     BenchmarkCase(
         case_id="TN-11",
         file_name="clean_requirements.txt",
         content="fastapi>=0.110.0\npydantic>=2.7.0\ntorch>=2.2.0\n",
-        expected_violation=False,
+        expected_finding=False,
         description="Dependencias estándar y versiones robustas sin librerías prohibidas",
     ),
     BenchmarkCase(
@@ -328,7 +330,7 @@ name = "safe-nlp-system"
 version = "1.0.0"
 dependencies = ["transformers>=4.40.0", "litellm>=1.30.0"]
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Manifiesto pyproject.toml limpio y conforme",
     ),
     BenchmarkCase(
@@ -345,7 +347,7 @@ def full_branch_clean(flag):
         cmd = guardrails.validate(cmd)
     os.system(cmd)
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Bifurcación condicional donde el 100% de los caminos son sanitizados y registrados",
     ),
     BenchmarkCase(
@@ -354,7 +356,7 @@ def full_branch_clean(flag):
         content="""import fer # aicomply:ignore EUAIA-ART05-001
 detector = fer.FER()
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Caso con supresión inline explícita auditada # aicomply:ignore",
     ),
     BenchmarkCase(
@@ -364,15 +366,34 @@ detector = fer.FER()
 def backup_dir(path):
     os.system(f"tar -czf backup.tar.gz {path}")
 """,
-        expected_violation=False,
+        expected_finding=False,
         description="Comando de utilidades del sistema estándar sin flujo de datos de IA",
+    ),
+    BenchmarkCase(
+        case_id="TN-16",
+        file_name="fixed_command_dispatch.py",
+        content="""import openai, os, logging
+def dispatch():
+    logging.info("Selección de acción registrada")
+    res = openai.chat.completions.create(model='gpt-4o', messages=[])
+    action = res.choices[0].message.content
+    if action == "status":
+        cmd = "printf status"
+    elif action == "help":
+        cmd = "printf help"
+    else:
+        return
+    os.system(cmd)
+""",
+        expected_finding=False,
+        description="Selección cerrada de comandos constantes; ninguna salida del LLM llega al shell",
     ),
 ]
 
 
 def test_precision_recall_benchmark_evaluation(tmp_path: Path):
     """
-    Ejecuta la evaluación formal de Precisión, Recall y F1-Score sobre los 30 casos de prueba.
+    Calcula Precisión, Recall y F1-Score sobre los casos sintéticos declarados.
     Verifica que el motor cumpla los estándares de calidad >= 95%.
     """
     rules = load_rules_from_dir(get_default_rules_dir())
@@ -388,6 +409,7 @@ def test_precision_recall_benchmark_evaluation(tmp_path: Path):
 
     # 1. Evaluar casos positivos (deben disparar hallazgos)
     for case in TRUE_POSITIVE_CASES:
+        assert case.expected_finding
         test_file = benchmark_dir / case.file_name
         test_file.write_text(case.content, encoding="utf-8")
         report = engine.scan_path(test_file)
@@ -404,8 +426,9 @@ def test_precision_recall_benchmark_evaluation(tmp_path: Path):
             print(f"FAILED RECALL ON {case.case_id}: {case.description}")
         test_file.unlink()
 
-    # 2. Evaluar casos negativos / conformes (NO deben disparar hallazgos)
+    # 2. Evaluar casos negativos (NO deben disparar hallazgos)
     for case in TRUE_NEGATIVE_CASES:
+        assert not case.expected_finding
         test_file = benchmark_dir / case.file_name
         test_file.write_text(case.content, encoding="utf-8")
         report = engine.scan_path(test_file)

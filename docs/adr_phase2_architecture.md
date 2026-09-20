@@ -1,4 +1,11 @@
 # ADR 002: Architecture Decision Record — Phase 2 (AIComply v2.0)
+> **Historical design, superseded for release decisions (2026-09-20).**
+> This document records proposals, not verified guarantees. Its claims about
+> soundness, precision, HUMAN_GATED safety, compliance and non-repudiation must
+> not be used as product promises. Current contracts and limitations are in
+> [README](../README.md), [engineering guide](EU_AI_ACT_ENGINEERS_GUIDE.md)
+> and [readiness review](PRODUCTION_READINESS.md).
+
 **Status:** Approved / In Design  
 **Date:** 2026-09-01  
 **Author:** Principal SAST Architect & Compiler Engineer (AIComply Core Team)  

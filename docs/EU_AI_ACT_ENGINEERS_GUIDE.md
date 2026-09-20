@@ -1,377 +1,120 @@
-﻿# EU AI Act Engineering Guide for Software & AI Engineers
+# Guía de ingeniería: señales técnicas y obligaciones contextuales
 
-> **Version:** 1.0 (Aligned with Regulation (EU) 2024/1689 — EU AI Act, in force from 2024)
-> **Scope:** EU AI Act (Regulation 2024/1689) + GDPR (Regulation 2016/679)
-> **Target Audience:** AI/ML Engineers, Backend Developers, DevSecOps, CTOs, Technical Leads
-> **Companion Tool:** [AIComply CLI](https://github.com/aiambo08/AIComply) — catches every violation listed here automatically.
+Revisión: **2026-09-20**. Alcance: Reglamento (UE) 2024/1689 y RGPD.
+Esta guía orienta la preparación de evidencias; no determina conformidad.
 
----
+## 1. Recoger contexto antes de clasificar
 
-## Why This Guide Exists
+Registrar finalidad prevista, usuarios y personas afectadas, jurisdicción,
+rol de cada organización, versiones y despliegues, modelos/datasets de
+terceros, cambios de finalidad y tratamiento de datos personales. El rol
+puede variar entre sistemas o actividades: evaluar cada combinación.
+Un campo desconocido permanece pendiente.
 
-Reading the EU AI Act means navigating 400 pages of legal text. This guide does one thing: **translate each enforceable obligation into code patterns you can act on today** — with real Python examples, the compliance fix, and the AIComply rule ID that detects the violation automatically.
+`aicomply assess` y el formulario de la consola comparten `SystemContext`.
+Siempre devuelven una evaluación provisional, fuentes y contexto pendiente.
+Las etiquetas de reglas de `scan` priorizan revisión técnica; no sustituyen
+la evaluación contextual.
 
-> **Penalties at a glance:**
-> | Violation Tier | Max Fine |
-> |---|---|
-> | Prohibited AI practices (Art. 5) | €35,000,000 or 7% of global turnover |
-> | High-risk AI Act violations (Arts. 9–15) | €15,000,000 or 3% of global turnover |
-> | Providing incorrect information to authorities | €7,500,000 or 1% of global turnover |
-> | GDPR violations (Art. 32 GDPR) | €20,000,000 or 4% of global turnover |
+## 2. Mapa de revisión
 
----
-
-## Part I — Prohibited AI Practices (Art. 5)
-
-These are **absolute prohibitions**. Any code implementing them is illegal in the EU, regardless of context.
-
-### 1.1 Art. 5(1)(f) — Emotion Inference in Workplaces and Educational Institutions
-
-**What the law says:** Systems that infer emotions of individuals in workplace or educational institution contexts are prohibited.
-
-#### ❌ Vulnerable Code
-```python
-import fer  # Facial Emotion Recognition library
-from deepface import DeepFace
-
-# Using emotion recognition on employee videos
-result = DeepFace.analyze(employee_video_frame, actions=["emotion"])
-# -> PROHIBITED: infers emotional state from biometric data
-```
-
-#### ✅ Compliant Code
-```python
-# Do not use emotion inference libraries.
-# Productivity monitoring must use consented, non-biometric,
-# behavioural indicators via approved HR workflows.
-```
-
-#### AIComply Detection
-| Rule ID | Detection Type | Severity |
+| Disposición | Condición que debe verificarse | Evidencia que el código no basta para probar |
 |---|---|---|
-| `EUAIA-ART05-001` | AST Import (`import fer`, `from deepface`) | CRITICAL |
-| `EUAIA-ART05-003` | Infra Lockfile (detects `face-recognition`, `deepface`, `py-feat` in `requirements.txt`) | CRITICAL |
+| Arts. 2–3 | Definición, ámbito territorial, exclusiones | Flujo comercial, finalidad real, participantes |
+| Art. 5 | Elementos de cada práctica y sus excepciones | Contexto laboral/educativo, perjuicio, biometría, finalidad |
+| Art. 6(1), Anexo I | Producto/componente y evaluación de terceros exigida | Normativa sectorial y procedimiento aplicable |
+| Art. 6(2), Anexo III | Uso enumerado | Finalidad concreta, personas y decisiones afectadas |
+| Art. 6(3)–(4) | Excepción documentada, sin riesgo significativo/influencia material | Justificación del proveedor, registro cuando corresponda; el perfilado impide la excepción |
+| Arts. 9–15 | Requisitos de sistemas de alto riesgo | Gestión de riesgos, datos, documentación, logs, instrucciones, supervisión, robustez |
+| Arts. 16–27 | Obligaciones por rol | Responsables, contratos, incidentes, instrucciones y evaluaciones |
+| Art. 50 | Transparencia según interacción, contenido y rol | Información efectiva, marcado, divulgación y excepciones |
+| Arts. 51–55 | Proveedor de modelo GPAI y posible riesgo sistémico | Evaluaciones, documentación, copyright, información a integradores |
+| RGPD Arts. 5/6/9/25/32/35 | Tratamiento y riesgos | Base jurídica, minimización, conservación, garantías, EIPD |
+| RGPD Art. 22 | Decisión exclusivamente automatizada con efectos jurídicos o similares significativos | Excepciones, intervención humana efectiva, impugnación y garantías |
 
----
+GPAI y alto riesgo del sistema son evaluaciones distintas y pueden coexistir.
+El Art. 13 trata transparencia/instrucciones de sistemas de alto riesgo;
+el Art. 50 trata obligaciones específicas de información, marcado y divulgación.
+No basta una llamada `logging`, un booleano llamado `human_approved`, un
+disclaimer ni una etiqueta de texto para demostrar el cumplimiento material.
 
-### 1.2 Art. 5(1)(c) — Social Scoring Systems
+## 3. Interpretar hallazgos con prudencia
 
-**What the law says:** AI systems that evaluate or classify individuals based on social behaviour leading to detrimental treatment are prohibited.
+- Un import de `fer` o dependencia `deepface` acredita un patrón/declaración,
+  no emociones en el trabajo ni scraping indiscriminado. Revisar usos reales.
+- La ausencia de logging reconocido en un archivo puede coexistir con
+  middleware o infraestructura de registro; su presencia no prueba eficacia.
+- Un puerto 8000 puede estar detrás de TLS. Revisar redes, proxies y despliegue.
+- Sanitizadores del catálogo representan supuestos del análisis. Validar que
+  realmente transforman datos y que cubren el riesgo del destino concreto.
+- Un nombre de compuerta humana no acredita aprobación efectiva, autenticada,
+  específica a la operación, trazable y no eludible.
+- Una regex de datos personales puede coincidir con fixtures o falsos positivos.
+  Documentar la revisión sin divulgar secretos o datos del cliente.
 
-#### ❌ Vulnerable Code
-```python
-def compute_citizen_score(behaviour_data: dict) -> float:
-    """Social scoring algorithm — PROHIBITED."""
-    return (
-        behaviour_data["payment_history"] * 0.4 +
-        behaviour_data["social_media_activity"] * 0.3 +
-        behaviour_data["movement_patterns"] * 0.3
-    )
-```
+El analizador no ejecuta código, inspecciona datasets reales ni prueba modelos.
+No evalúa métricas por subgrupos, drift, equidad, exactitud runtime o contratos.
+Un resultado vacío solo describe el catálogo y el alcance analizados.
 
-#### ✅ Compliant Code
-```python
-# Credit scoring limited to financial data for regulated lending purposes
-# is acceptable under Art. 5(1)(c) with proper GDPR Art. 22 safeguards.
-def compute_credit_risk(financial_data: dict) -> float:
-    return financial_data["debt_to_income_ratio"] * 0.6 + ...
-```
+## 4. Evidencias de ingeniería
 
-#### AIComply Detection
-| Rule ID | Detection Type | Severity |
+Para cada señal conservar ubicación, bytes/versiones, hashes de fuentes,
+catálogo y configuración, alcance/exclusiones, revisor, conclusión motivada,
+mitigación y verificación posterior. Registrar responsables, fechas y cambios.
+
+Aplicar controles según el caso: separación de privilegios, validación de
+acciones, supervisión humana efectiva, controles de acceso, evaluación de
+modelos y datasets, pruebas adversariales, gestión de incidencias y seguimiento.
+No registrar indiscriminadamente prompts, respuestas, identificadores o
+secretos para demostrar trazabilidad. Definir acceso, minimización y retención.
+
+## 5. Los nueve puntos del Anexo IV
+
+1. Descripción general, finalidad, proveedor, versiones, hardware/software,
+   interfaces, usuarios y puesta a disposición.
+2. Desarrollo: diseño, lógica, arquitectura, terceros, datos, entrenamiento,
+   validación/pruebas, supervisión, cambios y ciberseguridad.
+3. Monitorización, funcionamiento, control, capacidades/limitaciones,
+   exactitud por grupos, riesgos, entradas y supervisión.
+4. Adecuación de las métricas de rendimiento.
+5. Sistema de gestión de riesgos del Art. 9.
+6. Cambios relevantes durante el ciclo de vida.
+7. Normas armonizadas, especificaciones o soluciones alternativas aplicadas.
+8. Copia de la declaración UE de conformidad emitida por el responsable.
+9. Vigilancia poscomercialización y plan del Art. 72.
+
+`docgen` crea un borrador con estos nueve puntos, imports del snapshot y
+señales técnicas. No inventa datasets, finalidad, evaluaciones, responsables,
+certificaciones ni declaraciones. El Markdown generado no está firmado:
+conservar por separado el JSON firmado y sus evidencias externas.
+
+## 6. Fuentes y calendario
+
+| Fuente oficial | Naturaleza / disposición | Uso y límite de la verificación |
 |---|---|---|
-| `EUAIA-ART05-002` | AST (function names/comments matching social scoring semantics) | CRITICAL |
-
----
-
-## Part II — Transparency & Disclosure (Art. 13 & Art. 50)
-
-### 2.1 Art. 50(1) — AI Disclosure to End-Users
-
-#### ❌ Vulnerable Code
-```python
-from openai import OpenAI
-client = OpenAI()
-
-def respond_to_user(user_message: str) -> str:
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": user_message}]
-    )
-    return response.choices[0].message.content  # No AI disclosure
-```
-
-#### ✅ Compliant Code
-```python
-from openai import OpenAI
-client = OpenAI()
-
-AI_DISCLOSURE = "⚠️ You are interacting with an AI assistant powered by a large language model."
-
-def start_session():
-    print(AI_DISCLOSURE)  # Must be shown before interaction begins
-
-def respond_to_user(user_message: str) -> str:
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": user_message}]
-    )
-    return response.choices[0].message.content
-```
-
-#### AIComply Detection
-| Rule ID | Detection Type | Severity |
-|---|---|---|
-| `EUAIA-ART13-001` | AST (LLM client calls missing disclosure string) | HIGH |
-| `EUAIA-ART50-002` | AST (missing `AI_DISCLOSURE` constant) | MEDIUM |
-
----
-
-### 2.2 Art. 50(2) — Synthetic Content Disclosure
-
-#### ❌ Vulnerable Code
-```python
-def generate_article(prompt: str) -> str:
-    response = client.chat.completions.create(model="gpt-4o", messages=[...])
-    return response.choices[0].message.content  # Raw AI output, no label
-```
-
-#### ✅ Compliant Code
-```python
-SYNTHETIC_WATERMARK = "\n\n---\n*This content was generated by an AI system. Review before use.*"
-
-def generate_article(prompt: str) -> str:
-    response = client.chat.completions.create(model="gpt-4o", messages=[...])
-    return response.choices[0].message.content + SYNTHETIC_WATERMARK
-```
-
-| Rule ID | Detection Type | Severity |
-|---|---|---|
-| `EUAIA-ART50-003` | DataFlow Taint: LLM response returned without watermark/sanitizer | MEDIUM |
-
----
-
-## Part III — Logging & Auditability (Art. 12)
-
-#### ❌ Vulnerable Code
-```python
-from openai import OpenAI
-client = OpenAI()
-
-def run_ai_decision(input_data: str) -> str:
-    response = client.chat.completions.create(model="gpt-4o", messages=[...])
-    return response.choices[0].message.content  # No structured log
-```
-
-#### ✅ Compliant Code
-```python
-import json, logging, datetime
-from openai import OpenAI
-
-logger = logging.getLogger("ai_audit")
-client = OpenAI()
-
-def run_ai_decision(input_data: str) -> str:
-    response = client.chat.completions.create(model="gpt-4o", messages=[...])
-    output = response.choices[0].message.content
-
-    logger.info(json.dumps({
-        "timestamp": datetime.datetime.utcnow().isoformat(),
-        "model": "gpt-4o",
-        "request_id": response.id,
-        "output_tokens": response.usage.completion_tokens,
-        "finish_reason": response.choices[0].finish_reason,
-    }))
-    return output
-```
-
-| Rule ID | Detection Type | Severity |
-|---|---|---|
-| `EUAIA-ART12-001` | AST Absence: LLM call in scope without structured logger | HIGH |
-
----
-
-## Part IV — Human Oversight (Art. 14 & Art. 15)
-
-### 4.1 Art. 14(4)(a) — Autonomous Agent Command Execution
-
-#### ❌ Vulnerable Code (Taint Flow: LLM → subprocess)
-```python
-import subprocess
-from openai import OpenAI
-client = OpenAI()
-
-def execute_agent_task(user_request: str):
-    response = client.chat.completions.create(model="gpt-4o", messages=[...])
-    command = response.choices[0].message.content  # TAINTED: LLM output
-    subprocess.run(command, shell=True)             # SINK: executes arbitrary OS command
-```
-
-#### ✅ Compliant Code (Human-Gated with Allowlist)
-```python
-import subprocess
-from openai import OpenAI
-client = OpenAI()
-
-APPROVED_COMMANDS = {"ls", "echo", "pwd"}
-
-def execute_agent_task(user_request: str):
-    response = client.chat.completions.create(model="gpt-4o", messages=[...])
-    raw_command = response.choices[0].message.content.strip()
-    base = raw_command.split()[0] if raw_command else ""
-
-    if base not in APPROVED_COMMANDS:  # HUMAN_GATED: allowlist validation
-        raise PermissionError(f"Command '{base}' requires human approval before execution.")
-
-    subprocess.run(raw_command, shell=False)
-```
-
-| Rule ID | Detection Type | Severity |
-|---|---|---|
-| `EUAIA-ART14-002` | DataFlow Taint: LLM → subprocess without HUMAN_GATED branch | CRITICAL |
-
----
-
-### 4.2 Art. 15 — Hardcoded API Credentials
-
-#### ❌ Vulnerable Code
-```python
-import openai
-openai.api_key = "sk-proj-abc123def456ghi789jkl0"  # CRITICAL
-```
-
-#### ✅ Compliant Code
-```python
-import os
-from openai import OpenAI
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-```
-
-| Rule ID | Detection Type | Severity |
-|---|---|---|
-| `EUAIA-ART15-002` | Regex (`sk-`, `sk-ant-`, `sk-proj-` patterns) | CRITICAL |
-| `GDPR-ART32-001` | Regex (cross-enforcement with GDPR Art. 32) | CRITICAL |
-
----
-
-## Part V — GDPR Integration
-
-### 5.1 GDPR Art. 22 — Automated Decision-Making Without Human Review
-
-#### ❌ Vulnerable Code
-```python
-def process_loan_application(application: dict) -> str:
-    score = ai_model.predict(application)
-    return "REJECTED" if score < 0.5 else "APPROVED"  # No human review path
-```
-
-#### ✅ Compliant Code
-```python
-def process_loan_application(application: dict) -> dict:
-    score = ai_model.predict(application)
-    if score < 0.5:
-        return {"decision": "REFERRED_TO_HUMAN", "ai_score": score}
-    return {"decision": "APPROVED_FOR_REVIEW", "pending_human_confirmation": True}
-```
-
-| Rule ID | Detection Type | Severity |
-|---|---|---|
-| `GDPR-ART22-001` | AST (automated classification without human review branch) | HIGH |
-
----
-
-## Part VI — Container & Infrastructure Security
-
-### 6.1 Art. 15 + GDPR Art. 32 — AI Container Running as Root
-
-#### ❌ Vulnerable Dockerfile
-```dockerfile
-FROM python:3.11-slim
-COPY . /app
-WORKDIR /app
-RUN pip install -r requirements.txt
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-# -> Missing USER directive: runs as root
-```
-
-#### ✅ Compliant Dockerfile
-```dockerfile
-FROM python:3.11-slim
-COPY . /app
-WORKDIR /app
-RUN pip install -r requirements.txt
-RUN adduser --disabled-password --gecos "" appuser
-USER appuser
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-| Rule ID | Detection Type | Severity |
-|---|---|---|
-| `EUAIA-ART15-004` | Infra Docker (missing `USER` non-root directive) | HIGH |
-| `EUAIA-ART15-005` | Infra Docker (unencrypted HTTP port 8000/5000/80 exposed) | HIGH |
-| `EUAIA-ART15-006` | Infra Compose (`privileged: true` in docker-compose.yml) | CRITICAL |
-
----
-
-## Annex IV Technical Dossier — Preparation Checklist
-
-Run `aicomply docgen . --name "YourSystem" --version "1.0"` to auto-generate a draft, then verify all sections are complete.
-
-### Section 1: System Description & Purpose
-- [ ] System name, version, and responsible deployer identified
-- [ ] Intended purpose clearly defined (not "general purpose")
-- [ ] Geographic scope and user categories described
-- [ ] Prohibited use cases explicitly documented
-
-### Section 2: Technical Architecture
-- [ ] Component inventory: models, APIs, libraries, third-party providers
-- [ ] All AI models listed with: provider, version, license, training data source
-- [ ] Infrastructure description: cloud provider, region, container spec
-
-### Section 3: Risk Management System (Art. 9)
-- [ ] Risk register maintained and reviewed quarterly
-- [ ] Foreseeable misuse scenarios documented
-- [ ] Residual risk level assessed and accepted by accountable executive
-- [ ] Mitigation measures for each identified risk
-
-### Section 4: Data Governance (Art. 10)
-- [ ] Training data sources, selection criteria, and consent documented
-- [ ] Personal data processing documented under GDPR Art. 30 Records
-
-### Section 5: Human Oversight Measures (Art. 14)
-- [ ] Human-in-the-loop (HITL) mechanisms identified in code
-- [ ] Override and interrupt procedures documented
-- [ ] Incident escalation procedure defined
-
-### Section 6: Cybersecurity & Robustness (Art. 15)
-- [ ] No hardcoded API keys or secrets (verified by `aicomply scan`)
-- [ ] TLS 1.2+ enforced for all AI API calls
-- [ ] Container runs as non-root user
-- [ ] Prompt injection defences implemented and tested
-
-### Section 7: Transparency & Disclosure (Art. 13 & 50)
-- [ ] AI disclosure shown to all end-users before/during interaction
-- [ ] AI-generated content labelled with synthetic content marker
-- [ ] Structured logging enabled for all AI inference calls
-
----
-
-## Quick Reference: Article → Rule ID → Code Fix
-
-| Article | Rule ID | Code Fix |
-|---|---|---|
-| Art. 5(1)(f) — Emotion inference | `EUAIA-ART05-001` | Remove `import fer`, `deepface`, `py-feat` |
-| Art. 5 — Prohibited libraries in lockfile | `EUAIA-ART05-003` | Remove from `requirements.txt` / `pyproject.toml` |
-| Art. 12 — Missing structured logging | `EUAIA-ART12-001` | Add `logger.info(json.dumps({...}))` to LLM call scope |
-| Art. 14(4) — Autonomous cmd execution | `EUAIA-ART14-002` | Validate LLM output against allowlist before `subprocess` |
-| Art. 15 — Hardcoded API key | `EUAIA-ART15-002` | Use `os.environ["OPENAI_API_KEY"]` instead |
-| Art. 15 — Prompt injection | `EUAIA-ART15-003` | Sanitize + truncate user input before f-string interpolation |
-| Art. 15 + GDPR 32 — Root container | `EUAIA-ART15-004` | Add `USER appuser` to Dockerfile |
-| Art. 50(2) — Synthetic content unlabelled | `EUAIA-ART50-003` | Append watermark/label to LLM output before return |
-| GDPR Art. 22 — No human review path | `GDPR-ART22-001` | Add human review branch to all automated decisions |
-| GDPR Art. 32 — TLS disabled | `GDPR-ART32-002` | Remove `verify=False`; enforce TLS certificate validation |
-
----
-
-*Generated to accompany [AIComply CLI](https://github.com/aiambo08/AIComply) — the open-source EU AI Act & GDPR compliance scanner.*
-*This guide does not constitute legal advice. Consult a qualified EU AI Act legal counsel for binding compliance determinations.*
+| [Reglamento (UE) 2024/1689](https://eur-lex.europa.eu/eli/reg/2024/1689/oj) | Texto legal publicado; Arts. 2–6, 9–27, 50–55, 99, 113; Anexos I/III/IV | Base normativa. La publicación original no sustituye comprobar modificaciones y régimen transitorio vigentes |
+| [RGPD](https://eur-lex.europa.eu/eli/reg/2016/679/oj) | Texto legal; Arts. 5, 6, 9, 22, 25, 32, 35, 83 | Revisar tratamiento, excepciones y legislación complementaria |
+| [Service Desk: Art. 6](https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-6) | Presentación institucional | Apoyo para Art. 6 y anexos; no sustituye Diario Oficial |
+| [Service Desk: Anexo IV](https://ai-act-service-desk.ec.europa.eu/en/ai-act/annex-4) | Presentación institucional | Estructura de documentación de nueve puntos |
+| [AI Omnibus](https://digital-strategy.ec.europa.eu/en/news/ai-omnibus-enters-force) | Comunicación institucional consultada el 2026-09-20 | Comunica modificaciones/calendario; pendiente cotejo integral con acto modificativo y texto consolidado |
+| [Enforcement AI Act](https://digital-strategy.ec.europa.eu/en/policies/enforcement-ai-act) | Información de la Comisión | Autoridades, aplicación y calendario |
+
+La información institucional consultada comunica 2027-12-02 para los usos
+del Anexo III y 2028-08-02 para productos del Anexo I. El clasificador los
+presenta como fechas orientativas que requieren confirmar texto vigente,
+rol, fecha de comercialización y transición. No convertir fechas de una
+noticia o propuesta en un dictamen jurídico. Revalidar este registro antes de
+cada release o evaluación de cliente.
+
+## 7. Sanciones: referencias, no predicciones
+
+El Art. 99 diferencia, entre otros, máximos de 35 M€ / 7%, 15 M€ / 3% y
+7,5 M€ / 1% según categoría. Hay reglas específicas para empresas, pymes,
+autoridades y otros supuestos; la cifra aplicable requiere valoración jurídica.
+Los proveedores GPAI tienen un régimen separado, incluido el Art. 101.
+RGPD Art. 83(4) incluye Art. 32 y el máximo 10 M€ / 2%;
+Art. 83(5) contempla otras infracciones con 20 M€ / 4%.
+
+No sumar máximos por hallazgo. El código no determina facturación, causalidad,
+responsabilidad, proporcionalidad, acumulación ni decisión de una autoridad.
+No presentar hallazgos como multas previstas o cantidades evitadas.

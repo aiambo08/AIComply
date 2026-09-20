@@ -1,35 +1,64 @@
-"""
-AIComply - Data Flow (Taint Tracking) Engine
-Rastreo determinista de fuentes no confiables (LLMs), propagación por asignaciones,
-convergencia pesimista (⊔) y detección de ejecución en sumideros críticos (Sinks).
-"""
+"""Intra-procedural, conservative tracking of configured AI data flows."""
 
 import ast
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from collections import deque
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional
 
 from aicomply.dataflow.cfg_builder import CFGBuilder, CFGNode, ControlFlowGraph
-from aicomply.dataflow.states import TaintEnvironment, TaintState
+from aicomply.dataflow.states import TaintState, pessimistic_join
 from aicomply.evidence.hasher import compute_finding_hash
 from aicomply.schemas import (
     CodeLocation,
-    DataFlowSanitizer,
-    DataFlowSink,
-    DataFlowSource,
     DataFlowSpec,
-    FlowStep,
     Finding,
+    FlowStep,
     PatternType,
     Rule,
 )
 
 
-class DataFlowEngine:
-    """Motor de análisis de flujo de datos y taint tracking."""
+@dataclass(frozen=True)
+class _Value:
+    state: TaintState = TaintState.CLEAN
+    trace: tuple[FlowStep, ...] = ()
 
-    def __init__(self, rules: List[Rule], aliases: Optional[Dict[str, str]] = None) -> None:
-        self.rules = [r for r in rules if any(p.type == PatternType.DATA_FLOW and p.data_flow for p in r.patterns)]
-        self.aliases: Dict[str, str] = aliases or {}
+
+def _join(left: _Value, right: _Value) -> _Value:
+    state = pessimistic_join(left.state, right.state)
+    candidates = [value for value in (left, right) if value.state == state]
+    return min(
+        candidates,
+        key=lambda value: (
+            len(value.trace),
+            tuple(
+                (s.location.start_line, s.location.start_col, s.message)
+                for s in value.trace
+            ),
+        ),
+    )
+
+
+def _merge(left: dict[str, _Value], right: dict[str, _Value]) -> dict[str, _Value]:
+    return {
+        name: _join(left.get(name, _Value()), right.get(name, _Value()))
+        for name in sorted(left.keys() | right.keys())
+    }
+
+
+class DataFlowEngine:
+    """Tracks configured sources and sanitizer return values; no runtime guarantees."""
+
+    def __init__(
+        self, rules: List[Rule], aliases: Optional[Dict[str, str]] = None
+    ) -> None:
+        self.rules = [
+            r
+            for r in rules
+            if any(p.type == PatternType.DATA_FLOW and p.data_flow for p in r.patterns)
+        ]
+        self.aliases: Dict[str, str] = dict(aliases or {})
+        self.resolved_calls: dict[ast.Call, str] = {}
         self.cfg_builder = CFGBuilder()
 
     def update_aliases(self, aliases: Dict[str, str]) -> None:
@@ -42,114 +71,70 @@ class DataFlowEngine:
         file_path: str,
         aliases: Optional[Dict[str, str]] = None,
     ) -> List[Finding]:
-        """Ejecuta el análisis de flujo de datos en todo el módulo/archivo."""
+        if aliases is not None:
+            self.aliases = dict(aliases)
         if not self.rules:
             return []
-
-        if aliases:
-            self.update_aliases(aliases)
-
         source_lines = source_code.splitlines()
-        findings: List[Finding] = []
-
-        # 1. Analizar funciones individuales
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                cfg = self.cfg_builder.build_for_function(node)
-                func_findings = self._analyze_cfg(cfg, source_lines, file_path)
-                findings.extend(func_findings)
-
-        # 2. Analizar nivel de módulo (código fuera de funciones)
+        graphs = [
+            self.cfg_builder.build_for_function(node)
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
         if isinstance(tree, ast.Module):
-            # Filtrar solo sentencias a nivel superior que no sean definiciones de funciones/clases
-            top_level_stmts = [
-                s for s in tree.body 
-                if not isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-            ]
-            if top_level_stmts:
-                top_module = ast.Module(body=top_level_stmts, type_ignores=[])
-                cfg = self.cfg_builder.build_for_module(top_module)
-                module_findings = self._analyze_cfg(cfg, source_lines, file_path)
-                findings.extend(module_findings)
-
-        return findings
+            graphs.append(self.cfg_builder.build_for_module(tree))
+        findings: dict[str, Finding] = {}
+        for graph in graphs:
+            for finding in self._analyze_cfg(graph, source_lines, file_path):
+                findings[finding.id] = finding
+        return sorted(findings.values(), key=lambda f: (f.location.start_line, f.id))
 
     def _resolve_name(self, node: ast.AST) -> str:
-        """Resuelve nombres y atributos utilizando la tabla de alias de Fase 1."""
         if isinstance(node, ast.Name):
             return self.aliases.get(node.id, node.id)
-        elif isinstance(node, ast.Attribute):
+        if isinstance(node, ast.Attribute):
             base = self._resolve_name(node.value)
             return f"{base}.{node.attr}" if base else node.attr
-        elif isinstance(node, ast.Call):
-            return self._resolve_name(node.func)
+        if isinstance(node, ast.Call):
+            return self.resolved_calls.get(node, self._resolve_name(node.func))
         return ""
 
-    def _get_snippet(self, source_lines: List[str], start_line: int, end_line: int) -> str:
-        if 1 <= start_line <= len(source_lines):
-            return "\n".join(source_lines[start_line - 1 : end_line])
-        return ""
-
-    def _create_location(self, node: ast.AST, file_path: str) -> CodeLocation:
-        start_line = getattr(node, "lineno", 1)
-        end_line = getattr(node, "end_lineno", start_line)
-        start_col = getattr(node, "col_offset", 0)
-        end_col = getattr(node, "end_col_offset", 0)
-        return CodeLocation(
-            file_path=file_path,
-            start_line=start_line,
-            end_line=end_line,
-            start_col=start_col,
-            end_col=end_col,
+    def _matches_any_target(self, call_name: str, targets: List[str]) -> bool:
+        name = call_name.lower()
+        return any(
+            target and (name == target.lower() or name.endswith("." + target.lower()))
+            for target in targets
         )
 
-    def _analyze_cfg(
-        self,
-        cfg: ControlFlowGraph,
-        source_lines: List[str],
-        file_path: str,
-    ) -> List[Finding]:
-        findings: List[Finding] = []
+    def _create_location(
+        self, node: ast.expr | ast.stmt, file_path: str
+    ) -> CodeLocation:
+        return CodeLocation(
+            file_path=file_path,
+            start_line=node.lineno,
+            end_line=node.end_lineno or node.lineno,
+            start_col=node.col_offset,
+            end_col=node.end_col_offset or 0,
+        )
 
-        # Para cada regla con especificación DataFlow
+    def _get_snippet(
+        self, source_lines: List[str], start_line: int, end_line: int
+    ) -> str:
+        return "\n".join(source_lines[start_line - 1 : end_line])
+
+    def _analyze_cfg(
+        self, cfg: ControlFlowGraph, source_lines: List[str], file_path: str
+    ) -> List[Finding]:
+        findings = []
         for rule in self.rules:
             for pattern in rule.patterns:
                 if pattern.type == PatternType.DATA_FLOW and pattern.data_flow:
-                    rule_findings = self._evaluate_rule_on_cfg(
-                        rule=rule,
-                        spec=pattern.data_flow,
-                        cfg=cfg,
-                        source_lines=source_lines,
-                        file_path=file_path,
+                    findings.extend(
+                        self._evaluate_rule_on_cfg(
+                            rule, pattern.data_flow, cfg, source_lines, file_path
+                        )
                     )
-                    findings.extend(rule_findings)
-
         return findings
-
-    def _matches_any_target(self, call_name: str, targets: List[str]) -> bool:
-        call_lower = call_name.lower()
-        for target in targets:
-            target_lower = target.lower()
-            if target_lower in call_lower or call_lower.endswith(target_lower):
-                return True
-        return False
-
-    def _extract_assigned_var(self, target_node: ast.AST) -> Optional[str]:
-        """Extrae el nombre de la variable objetivo de una asignación."""
-        if isinstance(target_node, ast.Name):
-            return target_node.id
-        elif isinstance(target_node, ast.Attribute):
-            return self._resolve_name(target_node)
-        return None
-
-    def _expression_contains_var(self, expr_node: ast.AST, var_name: str) -> bool:
-        """Comprueba si una expresión AST referencia a la variable dada."""
-        for child in ast.walk(expr_node):
-            if isinstance(child, ast.Name) and child.id == var_name:
-                return True
-            elif isinstance(child, ast.Attribute) and child.attr == var_name:
-                return True
-        return False
 
     def _evaluate_rule_on_cfg(
         self,
@@ -159,181 +144,221 @@ class DataFlowEngine:
         source_lines: List[str],
         file_path: str,
     ) -> List[Finding]:
-        findings: List[Finding] = []
-        source_targets = [s.target for s in spec.sources]
-        sink_targets = [s.target for s in spec.sinks]
-        sanitizer_targets = [s.target for s in spec.sanitizers]
+        sources = [s.target for s in spec.sources]
+        sanitizers = [s.target for s in spec.sanitizers]
+        sinks = [s.target for s in spec.sinks]
+        findings: dict[str, Finding] = {}
 
-        # Mapeo de entornos de taint por nodo
-        node_env_in: Dict[int, TaintEnvironment] = {}
-        node_env_out: Dict[int, TaintEnvironment] = {}
-        var_traces: Dict[str, List[FlowStep]] = {}
+        def step(kind: str, node: ast.expr | ast.stmt, message: str) -> FlowStep:
+            loc = self._create_location(node, file_path)
+            return FlowStep(
+                step_type=kind,
+                message=message,
+                location=loc,
+                code_snippet=self._get_snippet(
+                    source_lines, loc.start_line, loc.end_line
+                ),
+            )
 
-        # Orden de evaluación topológica del CFG
-        nodes = cfg.get_topological_order()
+        def append(value: _Value, next_step: FlowStep) -> _Value:
+            if next_step in value.trace:
+                return value
+            return _Value(value.state, (*value.trace, next_step))
 
-        for node in nodes:
-            # 1. Calcular Environment IN mediante unión pesimista (⊔) de los predecesores
-            if not node.predecessors:
-                current_env = TaintEnvironment()
-            elif len(node.predecessors) == 1:
-                pred = node.predecessors[0]
-                current_env = node_env_out.get(pred.node_id, TaintEnvironment()).copy()
+        def report(call: ast.Call, value: _Value) -> None:
+            name = self._resolve_name(call)
+            sink_step = step(
+                "sink", call, f"Sumidero crítico '{name}' con datos IA no validados"
+            )
+            loc = sink_step.location
+            snippet = sink_step.code_snippet or ""
+            finding_id = compute_finding_hash(rule.id, loc, name, snippet)
+            findings[finding_id] = Finding(
+                id=finding_id,
+                rule_id=rule.id,
+                article=rule.article,
+                severity=rule.severity,
+                risk_tier=rule.risk_tier,
+                title=rule.title,
+                message=f"Flujo de datos IA no validado hasta '{name}' ({rule.article}).",
+                location=loc,
+                code_snippet=snippet,
+                remediation=rule.remediation,
+                max_fine=rule.max_fine,
+                confidence=rule.confidence,
+                flow_steps=[*value.trace, sink_step],
+            )
+
+        def storage_name(node: ast.AST) -> str:
+            if isinstance(node, ast.Name):
+                return node.id
+            if isinstance(node, ast.Attribute):
+                base = storage_name(node.value)
+                return f"{base}.{node.attr}" if base else ""
+            return ""
+
+        def assign(target: ast.expr, value: _Value, env: dict[str, _Value]) -> None:
+            if isinstance(target, (ast.Tuple, ast.List)):
+                for item in target.elts:
+                    assign(item, value, env)
+            elif isinstance(target, ast.Starred):
+                assign(target.value, value, env)
+            elif isinstance(target, ast.Subscript):
+                name = storage_name(target.value)
+                if name:
+                    env[name] = _join(env.get(name, _Value()), value)
             else:
-                # NODO PHI: Convergencia de múltiples ramas -> Aplicar Join Pesimista
-                current_env = TaintEnvironment()
-                for pred in node.predecessors:
-                    pred_env = node_env_out.get(pred.node_id, TaintEnvironment())
-                    current_env = current_env.join(pred_env)
+                name = storage_name(target)
+                if name:
+                    for key in list(env):
+                        if key.startswith(name + "."):
+                            del env[key]
+                    env[name] = value
 
-            # Si este nodo es una compuerta humana (rama THEN de un IF con human approval)
-            if node.is_human_gate:
-                # Promover todas las variables activas a HUMAN_GATED en este scope
-                for var, st in list(current_env._mapping.items()):
-                    if st == TaintState.TAINTED_UNSAFE:
-                        current_env.set(var, TaintState.HUMAN_GATED)
+        def expression(
+            node: ast.AST | None,
+            env: dict[str, _Value],
+            emit: Callable[[ast.Call, _Value], None],
+        ) -> _Value:
+            if node is None or isinstance(node, (ast.Constant, ast.Lambda)):
+                return _Value()
+            if isinstance(node, ast.Name):
+                return env.get(node.id, _Value())
+            if isinstance(node, ast.NamedExpr):
+                value = expression(node.value, env, emit)
+                assign(node.target, value, env)
+                return value
+            if isinstance(node, ast.IfExp):
+                expression(node.test, env, emit)
+                then_env, else_env = env.copy(), env.copy()
+                value = _join(
+                    expression(node.body, then_env, emit),
+                    expression(node.orelse, else_env, emit),
+                )
+                env.update(_merge(then_env, else_env))
+                return value
+            if isinstance(node, ast.Call):
+                value = _Value()
+                if isinstance(node.func, ast.Attribute):
+                    value = expression(node.func.value, env, emit)
+                arguments = _Value()
+                for arg in [*node.args, *(kw.value for kw in node.keywords)]:
+                    arguments = _join(arguments, expression(arg, env, emit))
+                name = self._resolve_name(node)
+                if (
+                    self._matches_any_target(name, sinks)
+                    and arguments.state == TaintState.TAINTED_UNSAFE
+                ):
+                    emit(node, arguments)
+                if self._matches_any_target(name, sources):
+                    return _Value(
+                        TaintState.TAINTED_UNSAFE,
+                        (
+                            step(
+                                "source",
+                                node,
+                                f"Origen de datos IA no validado: '{name}'",
+                            ),
+                        ),
+                    )
+                value = _join(value, arguments)
+                if self._matches_any_target(name, sanitizers):
+                    return _Value(TaintState.SANITIZED)
+                return value
+            if isinstance(
+                node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+            ):
+                local = env.copy()
+                for generator in node.generators:
+                    value = expression(generator.iter, local, emit)
+                    assign(generator.target, value, local)
+                    for condition in generator.ifs:
+                        expression(condition, local, emit)
+                if isinstance(node, ast.DictComp):
+                    return _join(
+                        expression(node.key, local, emit),
+                        expression(node.value, local, emit),
+                    )
+                return expression(node.elt, local, emit)
+            if isinstance(node, ast.BoolOp):
+                value = _Value()
+                for operand in node.values:
+                    before = env.copy()
+                    value = _join(value, expression(operand, env, emit))
+                    env.update(_merge(before, env))
+                return value
+            value = env.get(storage_name(node), _Value())
+            for child in ast.iter_child_nodes(node):
+                if not isinstance(child, ast.stmt):
+                    value = _join(value, expression(child, env, emit))
+            return value
 
-            node_env_in[node.node_id] = current_env.copy()
-            out_env = current_env.copy()
+        def transfer(
+            node: CFGNode,
+            incoming: dict[str, _Value],
+            emit: Callable[[ast.Call, _Value], None],
+        ) -> dict[str, _Value]:
+            env = incoming.copy()
+            stmt = node.ast_node
+            if isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                if stmt.value is None:
+                    return env
+                value = expression(stmt.value, env, emit)
+                targets = (
+                    stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+                )
+                if isinstance(stmt, ast.AugAssign):
+                    value = _join(value, expression(stmt.target, env, emit))
+                if value.state == TaintState.TAINTED_UNSAFE and (
+                    not value.trace
+                    or value.trace[-1].location.start_line != stmt.lineno
+                ):
+                    value = append(
+                        value, step("propagation", stmt, "Propagación por asignación")
+                    )
+                for target in targets:
+                    assign(target, value, env)
+            elif isinstance(stmt, (ast.For, ast.AsyncFor)):
+                value = expression(stmt.iter, env, emit)
+                # The iterator may be empty, so retain the previous binding.
+                previous = env.copy()
+                assign(stmt.target, value, env)
+                env = _merge(previous, env)
+            elif isinstance(stmt, ast.While):
+                expression(stmt.test, env, emit)
+            elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+                for item in stmt.items:
+                    value = expression(item.context_expr, env, emit)
+                    if item.optional_vars:
+                        assign(item.optional_vars, value, env)
+            elif isinstance(stmt, ast.Delete):
+                for target in stmt.targets:
+                    assign(target, _Value(), env)
+            elif stmt is not None:
+                expression(stmt, env, emit)
+            return env
 
-            # 2. Evaluar la sentencia AST del nodo
-            if node.ast_node and isinstance(node.ast_node, ast.stmt):
-                stmt = node.ast_node
+        def incoming(node: CFGNode) -> dict[str, _Value]:
+            env: dict[str, _Value] = {}
+            for pred in node.predecessors:
+                env = _merge(env, outputs.get(pred.node_id, {}))
+            return env
 
-                # A. Caso Asignación (Assign / AnnAssign)
-                if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
-                    value_node = stmt.value if isinstance(stmt, ast.Assign) else stmt.value
-                    targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+        outputs: dict[int, dict[str, _Value]] = {}
+        queue = deque([cfg.entry])
+        queued = {cfg.entry.node_id}
+        while queue:
+            node = queue.popleft()
+            queued.remove(node.node_id)
+            env = transfer(node, incoming(node), lambda call, value: None)
+            if node.node_id not in outputs or outputs[node.node_id] != env:
+                outputs[node.node_id] = env
+                for successor in node.successors:
+                    if successor.node_id not in queued:
+                        queue.append(successor)
+                        queued.add(successor.node_id)
 
-                    if value_node:
-                        # Comprobar si el valor es una llamada directa a SOURCE
-                        call_name = self._resolve_name(value_node)
-                        is_source = self._matches_any_target(call_name, source_targets)
-
-                        # Comprobar si el valor es una llamada a SANITIZER
-                        is_sanitizer = self._matches_any_target(call_name, sanitizer_targets)
-
-                        # Comprobar si el valor propaga taint desde una variable existente
-                        propagates_from: Optional[str] = None
-                        for var_name, state in out_env._mapping.items():
-                            if state == TaintState.TAINTED_UNSAFE:
-                                if self._expression_contains_var(value_node, var_name):
-                                    propagates_from = var_name
-                                    break
-
-                        for tgt in targets:
-                            var_assigned = self._extract_assigned_var(tgt)
-                            if not var_assigned:
-                                continue
-
-                            loc = self._create_location(stmt, file_path)
-                            snippet = self._get_snippet(source_lines, loc.start_line, loc.end_line)
-
-                            if is_source:
-                                out_env.set(var_assigned, TaintState.TAINTED_UNSAFE)
-                                step = FlowStep(
-                                    step_type="source",
-                                    message=f"Origen de datos IA no validado: '{call_name}'",
-                                    location=loc,
-                                    code_snippet=snippet,
-                                )
-                                var_traces[var_assigned] = [step]
-
-                            elif is_sanitizer:
-                                out_env.set(var_assigned, TaintState.SANITIZED)
-                                if propagates_from and propagates_from in var_traces:
-                                    step = FlowStep(
-                                        step_type="sanitizer",
-                                        message=f"Saneamiento aplicado mediante '{call_name}'",
-                                        location=loc,
-                                        code_snippet=snippet,
-                                    )
-                                    var_traces[var_assigned] = var_traces[propagates_from] + [step]
-
-                            elif propagates_from:
-                                out_env.set(var_assigned, TaintState.TAINTED_UNSAFE)
-                                step = FlowStep(
-                                    step_type="propagation",
-                                    message=f"Propagación de datos de IA a la variable '{var_assigned}'",
-                                    location=loc,
-                                    code_snippet=snippet,
-                                )
-                                prev_trace = var_traces.get(propagates_from, [])
-                                var_traces[var_assigned] = prev_trace + [step]
-
-                # B. Caso llamada en expresión (Expr(Call)) o dentro del stmt -> Detección de Sinks y Sanitizers in-place
-                for call_node in ast.walk(stmt):
-                    if isinstance(call_node, ast.Call):
-                        call_name = self._resolve_name(call_node.func)
-
-                        # B.1. Sanitizer in-place (ej. guardrails.validate(cmd) o moderation(cmd))
-                        if self._matches_any_target(call_name, sanitizer_targets):
-                            for arg in call_node.args:
-                                if isinstance(arg, ast.Name) and out_env.is_tainted(arg.id):
-                                    out_env.set(arg.id, TaintState.SANITIZED)
-
-                        # B.2. Detección de Sumidero Crítico (Sink)
-                        elif self._matches_any_target(call_name, sink_targets):
-                            # Comprobar si algún argumento pasado está TAINTED_UNSAFE
-                            tainted_arg: Optional[str] = None
-                            for arg in call_node.args:
-                                for var_name, state in out_env._mapping.items():
-                                    if state == TaintState.TAINTED_UNSAFE:
-                                        if self._expression_contains_var(arg, var_name):
-                                            tainted_arg = var_name
-                                            break
-                                if tainted_arg:
-                                    break
-
-                            # También comprobar argumentos con nombre (kwargs)
-                            if not tainted_arg:
-                                for kw in call_node.keywords:
-                                    for var_name, state in out_env._mapping.items():
-                                        if state == TaintState.TAINTED_UNSAFE:
-                                            if self._expression_contains_var(kw.value, var_name):
-                                                tainted_arg = var_name
-                                                break
-                                    if tainted_arg:
-                                        break
-
-                            if tainted_arg:
-                                loc = self._create_location(call_node, file_path)
-                                snippet = self._get_snippet(source_lines, loc.start_line, loc.end_line)
-                                sink_step = FlowStep(
-                                    step_type="sink",
-                                    message=f"Invocación de sumidero crítico '{call_name}' con variable no validada '{tainted_arg}'",
-                                    location=loc,
-                                    code_snippet=snippet,
-                                )
-
-                                full_trace = var_traces.get(tainted_arg, []) + [sink_step]
-                                finding_id = compute_finding_hash(
-                                    rule_id=rule.id,
-                                    location=loc,
-                                    target=call_name,
-                                    snippet=snippet,
-                                )
-
-                                finding = Finding(
-                                    id=finding_id,
-                                    rule_id=rule.id,
-                                    article=rule.article,
-                                    severity=rule.severity,
-                                    risk_tier=rule.risk_tier,
-                                    title=rule.title,
-                                    message=(
-                                        f"Flujo de datos no validado detectado desde LLM hasta sumidero crítico '{call_name}' "
-                                        f"a través de '{tainted_arg}' ({rule.article})."
-                                    ),
-                                    location=loc,
-                                    code_snippet=snippet,
-                                    remediation=rule.remediation,
-                                    max_fine=rule.max_fine,
-                                    confidence=rule.confidence,
-                                    flow_steps=full_trace,
-                                )
-                                findings.append(finding)
-
-            node_env_out[node.node_id] = out_env
-
-        return findings
+        for node in cfg.get_topological_order():
+            if node.node_id in outputs:
+                transfer(node, incoming(node), report)
+        return list(findings.values())

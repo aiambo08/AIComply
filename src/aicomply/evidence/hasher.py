@@ -6,7 +6,7 @@ y para el conjunto del reporte de auditoría.
 
 import hashlib
 import json
-from typing import Any, Dict, List
+from typing import List
 from aicomply.schemas import CodeLocation, Finding
 
 

@@ -6,17 +6,17 @@ endpoints de inferencia en HTTP plano no cifrado y secretos en variables de ento
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 import yaml
 
 from aicomply.evidence.hasher import compute_finding_hash
+from aicomply.infra.input_reader import read_scan_text
 from aicomply.schemas import (
     CodeLocation,
     Finding,
     PatternType,
     Rule,
-    RulePattern,
 )
 
 
@@ -34,12 +34,14 @@ class DockerScanner:
             return []
 
         filename = file_path.name.lower()
+        if not (
+            "dockerfile" in filename
+            or "compose" in filename and filename.endswith((".yml", ".yaml"))
+        ):
+            return []
         rel_path = str(file_path.relative_to(base_path)) if base_path else str(file_path)
 
-        try:
-            content = file_path.read_text(encoding="utf-8-sig")
-        except Exception:
-            return []
+        content = read_scan_text(file_path, base_path)
 
         lines = content.splitlines()
         suppressions = self._extract_suppressions(lines)
@@ -79,13 +81,19 @@ class DockerScanner:
                 continue
 
             # 1. Comprobar directiva USER
-            if line_stripped.upper().startswith("USER"):
-                parts = line_stripped.split()
+            parts = line_stripped.split()
+            instruction = parts[0].upper()
+            if instruction == "FROM":
+                has_non_root_user = False
+                user_line = line_idx
+            if instruction == "USER":
                 if len(parts) > 1:
-                    user_val = parts[1].strip().lower()
-                    if user_val not in {"root", "0", "0:0"}:
-                        has_non_root_user = True
-                        user_line = line_idx
+                    user_val = parts[1].split(":", 1)[0].strip().lower()
+                    has_non_root_user = (
+                        user_val not in {"root", "0"}
+                        and not user_val.startswith(("$", "{"))
+                    )
+                    user_line = line_idx
 
             # 2. Comprobar secretos hardcodeados en ENV o ARG
             if line_stripped.upper().startswith(("ENV ", "ARG ")):
@@ -135,16 +143,16 @@ class DockerScanner:
                 for pattern in rule.patterns:
                     if pattern.type == PatternType.INFRA_DOCKER and pattern.match_args:
                         if pattern.match_args.get("missing_directive") == "USER":
-                            line_sups = suppressions.get(1, set())
+                            line_sups = suppressions.get(user_line, set())
                             if rule.id in line_sups or "ALL" in line_sups:
                                 continue
-                            snippet = lines[0].strip() if lines else "Dockerfile"
+                            snippet = lines[user_line - 1].strip() if lines else "Dockerfile"
                             findings.append(self._create_finding(
                                 rule=rule,
                                 target="missing_USER_directive",
                                 rel_path=rel_path,
-                                start_line=1,
-                                end_line=1,
+                                start_line=user_line,
+                                end_line=user_line,
                                 snippet=snippet,
                             ))
 
@@ -158,26 +166,33 @@ class DockerScanner:
         suppressions: Dict[int, Set[str]],
     ) -> List[Finding]:
         findings: List[Finding] = []
-        try:
-            parsed = yaml.safe_load(content)
-        except Exception:
-            return findings
+        depth = 0
+        for index, event in enumerate(yaml.parse(content)):
+            if isinstance(event, yaml.events.AliasEvent):
+                raise ValueError("Compose YAML aliases require manual review")
+            if isinstance(event, (yaml.events.MappingStartEvent, yaml.events.SequenceStartEvent)):
+                depth += 1
+            elif isinstance(event, (yaml.events.MappingEndEvent, yaml.events.SequenceEndEvent)):
+                depth -= 1
+            if depth > 64 or index > 20000:
+                raise ValueError("Compose YAML complexity budget exceeded")
+        parsed = yaml.safe_load(content)
 
-        if not isinstance(parsed, dict) or "services" not in parsed:
-            return findings
+        if not isinstance(parsed, dict):
+            raise ValueError("Compose document must be a mapping")
 
         services = parsed.get("services", {})
         if not isinstance(services, dict):
-            return findings
+            raise ValueError("Compose services must be a mapping")
 
         for svc_name, svc_conf in services.items():
             if not isinstance(svc_conf, dict):
-                continue
+                raise ValueError("Compose service must be a mapping")
 
             # 1. Privileged mode o User Root
             is_privileged = svc_conf.get("privileged") is True
             user_val = str(svc_conf.get("user", "")).lower()
-            is_root = user_val in {"root", "0", "0:0"}
+            is_root = user_val.split(":", 1)[0] in {"root", "0"}
 
             if is_privileged or is_root:
                 for rule in self.rules:

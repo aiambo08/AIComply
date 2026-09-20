@@ -20,13 +20,15 @@ def test_cli_scan_vulnerable_project_exit_code():
     assert "PROHIBIDO (Art. 5)" in result.stdout or "EUAIA-ART05-001" in result.stdout
 
 
-def test_cli_scan_compliant_project_exit_code():
+def test_cli_scan_without_findings_does_not_certify_compliance():
     compliant_path = Path(__file__).parents[1] / "fixtures" / "compliant_project"
     result = runner.invoke(app, ["scan", str(compliant_path)])
     
     # Debe salir limpio con código 0
     assert result.exit_code == 0
-    assert "CONFORMIDAD TÉCNICA VALIDADA" in result.stdout
+    assert "SIN HALLAZGOS EN EL ALCANCE ANALIZADO" in result.stdout
+    assert "No acredita conformidad legal ni garantiza ausencia de multas." in result.stdout
+    assert "CONFORMIDAD TÉCNICA VALIDADA" not in result.stdout
 
 
 def test_cli_scan_invalid_path_exit_code():

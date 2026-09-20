@@ -9,9 +9,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from aicomply.dataflow.taint_engine import DataFlowEngine
 from aicomply.evidence.hasher import compute_finding_hash
+from aicomply.infra.input_reader import read_scan_text
 from aicomply.schemas import (
     CodeLocation,
-    Confidence,
     Finding,
     PatternType,
     Rule,
@@ -87,6 +87,9 @@ class ASTContextVisitor(ast.NodeVisitor):
         return args_dict
 
     def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
+        for target in node.targets:
+            self.visit(target)
         # 1. Inferencia de tipo por instanciación: client = OpenAI() -> aliases["client"] = "openai.OpenAI"
         if isinstance(node.value, ast.Call):
             call_name = self._resolve_call_name(node.value.func)
@@ -95,27 +98,37 @@ class ASTContextVisitor(ast.NodeVisitor):
                     self.aliases[target.id] = call_name
 
         # 2. Asignación de alias directo: engine = client -> aliases["engine"] = aliases["client"]
-        elif isinstance(node.value, ast.Name):
-            source_val = self.aliases.get(node.value.id, node.value.id)
+        elif isinstance(node.value, (ast.Name, ast.Attribute)):
+            source_val = self._resolve_call_name(node.value)
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     self.aliases[target.id] = source_val
+        else:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.aliases.pop(target.id, None)
 
         # 3. Asignación de constantes para AST_ASSIGNMENT: ai_disclaimer = False
         for target in node.targets:
             if isinstance(target, ast.Name) and isinstance(node.value, ast.Constant):
                 self.assignments.append((target.id, node.value.value, node))
 
-        self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value:
+            self.visit(node.value)
+        self.visit(node.target)
+        self.visit(node.annotation)
+        value_name = self._resolve_call_name(node.value) if node.value else ""
+        if isinstance(node.target, ast.Name) and node.value:
+            self.aliases.pop(node.target.id, None)
         if isinstance(node.target, ast.Name):
             if node.value and isinstance(node.value, ast.Constant):
                 self.assignments.append((node.target.id, node.value.value, node))
             elif node.value and isinstance(node.value, ast.Call):
-                call_name = self._resolve_call_name(node.value.func)
-                self.aliases[node.target.id] = call_name
-        self.generic_visit(node)
+                self.aliases[node.target.id] = value_name
+            elif node.value and isinstance(node.value, (ast.Name, ast.Attribute)):
+                self.aliases[node.target.id] = value_name
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.function_defs.append((node.name, node))
@@ -124,7 +137,7 @@ class ASTContextVisitor(ast.NodeVisitor):
             dec_name = self._resolve_call_name(dec)
             if any(log_kw in dec_name.lower() for log_kw in ["log", "audit", "trace", "telemetry"]):
                 self.has_logging = True
-        self.generic_visit(node)
+        self._visit_function_body(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self.function_defs.append((node.name, node))
@@ -132,7 +145,26 @@ class ASTContextVisitor(ast.NodeVisitor):
             dec_name = self._resolve_call_name(dec)
             if any(log_kw in dec_name.lower() for log_kw in ["log", "audit", "trace", "telemetry"]):
                 self.has_logging = True
-        self.generic_visit(node)
+        self._visit_function_body(node)
+
+    def _visit_function_body(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        self.visit(node.args)
+        if node.returns:
+            self.visit(node.returns)
+        outer_aliases = self.aliases.copy()
+        args = node.args
+        parameters = [*args.posonlyargs, *args.args, *args.kwonlyargs]
+        if args.vararg:
+            parameters.append(args.vararg)
+        if args.kwarg:
+            parameters.append(args.kwarg)
+        for parameter in parameters:
+            self.aliases.pop(parameter.arg, None)
+        for statement in node.body:
+            self.visit(statement)
+        self.aliases = outer_aliases
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = self._resolve_call_name(node.func)
@@ -176,12 +208,8 @@ class PythonASTScanner:
         seen_finding_ids: Set[str] = set()
         rel_path = str(file_path.relative_to(base_path)) if base_path else str(file_path)
 
-        try:
-            source = file_path.read_text(encoding="utf-8-sig")
-            tree = ast.parse(source, filename=str(file_path))
-        except Exception:
-            # Archivo con sintaxis rota, encoding corrupto o inaccesible se omite de AST
-            return findings
+        source = read_scan_text(file_path, base_path)
+        tree = ast.parse(source, filename=str(file_path))
 
         visitor = ASTContextVisitor(source, rel_path)
         visitor.visit(tree)
@@ -205,11 +233,12 @@ class PythonASTScanner:
                         findings.append(f)
 
         # 2. Evaluación de reglas de flujo de datos (Taint Tracking & CFG)
+        self.dataflow_engine.resolved_calls = {node: name for name, node, _ in visitor.calls}
         dataflow_findings = self.dataflow_engine.analyze_file(
             tree=tree,
             source_code=source,
             file_path=rel_path,
-            aliases=visitor.aliases,
+            aliases={},
         )
         for f in dataflow_findings:
             line_supressions = supressions.get(f.location.start_line, set())
@@ -235,7 +264,7 @@ class PythonASTScanner:
 
         if pattern.type == PatternType.AST_IMPORT:
             for imp_name, node in visitor.imports:
-                if target_lower in imp_name.lower():
+                if imp_name.lower() == target_lower or imp_name.lower().startswith(target_lower + "."):
                     results.append(self._create_finding(rule, pattern, node, visitor, rel_path))
 
         elif pattern.type == PatternType.AST_CALL:
@@ -260,14 +289,9 @@ class PythonASTScanner:
                     results.append(self._create_finding(rule, pattern, node, visitor, rel_path))
 
         elif pattern.type == PatternType.AST_ABSENCE:
-            # Detección de ausencia: evaluar llamadas a la librería/API del target cuando no hay logging
-            target_parts = [p.lower() for p in pattern.target.split(".") if p]
-            target_root = target_parts[0] if target_parts else ""
-
             matching_calls = [
                 (name, node) for name, node, _ in visitor.calls
-                if (target_root and target_root in name.lower())
-                or any(len(p) > 3 and p in name.lower() for p in target_parts)
+                if name.lower() == target_lower or name.lower().endswith("." + target_lower)
             ]
             if matching_calls and not visitor.has_logging:
                 for _, node in matching_calls:
@@ -319,7 +343,7 @@ class PythonASTScanner:
             severity=rule.severity,
             risk_tier=rule.risk_tier,
             title=rule.title,
-            message=f"Patrón detectado '{pattern.target}' en conformidad con {rule.article}.",
+            message=f"Patrón técnico '{pattern.target}'; revisar aplicabilidad de {rule.article}.",
             location=loc,
             code_snippet=snippet,
             remediation=rule.remediation,

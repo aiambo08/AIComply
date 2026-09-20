@@ -26,12 +26,11 @@ def test_annex_iv_generation():
     assert report.scan_id in dossier
 
 
-def test_annex_iv_stack_detection_on_compliant_code(tmp_path: Path):
+def test_annex_iv_import_inventory_keeps_legal_assessment_pending(tmp_path: Path):
     rules_path = get_default_rules_dir()
     catalog = load_rules_from_dir(rules_path)
     engine = ScanEngine(catalog=catalog)
 
-    # Crear pipeline conforme con múltiples imports
     code = """
 import logging
 import openai
@@ -57,4 +56,8 @@ def run_agent():
     assert "LangChain" in dossier
     assert "Hugging Face Transformers" in dossier
     assert "Sistema de Registro y Auditoría" in dossier
-    assert "Conformidad Plena" in dossier
+    assert "Clasificación jurídica: PENDIENTE" in dossier
+    assert "Un import no prueba uso, modelo, versión, licencia, configuración ni efectividad de controles." in dossier
+    assert dossier.count("## SECCIÓN ") == 9
+    assert dossier.count("**Estado: PENDIENTE DE COMPLETAR Y VALIDAR.**") == 9
+    assert "Conformidad Plena" not in dossier

@@ -1,8 +1,7 @@
-﻿name: "AIComply — EU AI Act & GDPR Compliance Scanner"
+name: "AIComply — EU AI Act & GDPR Technical Review"
 description: >
-  Deterministic static analysis and taint tracking engine for EU AI Act (Regulation 2024/1689)
-  and GDPR compliance. Scans Python source code, supply chain manifests, and container infrastructure.
-  Optionally signs audit evidence with Ed25519 and uploads SARIF reports to GitHub Advanced Security.
+  Local static analysis supporting EU AI Act and GDPR technical review.
+  Findings require contextual review; no findings does not establish compliance.
 
 branding:
   icon: "shield"
@@ -10,68 +9,61 @@ branding:
 
 inputs:
   path:
-    description: "Path to the repository or directory to scan. Defaults to the workspace root."
+    description: "Path to the repository or directory to scan."
     required: false
     default: "."
-
   format:
-    description: "Output format: terminal | json | markdown | sarif. Defaults to sarif for CI use."
+    description: "Output format: terminal | json | markdown | sarif."
     required: false
     default: "sarif"
-
   output:
-    description: "Path to save the scan report. Defaults to aicomply-results.sarif."
+    description: "Path to save the scan report."
     required: false
     default: "aicomply-results.sarif"
-
   sign:
-    description: "Sign the report with an Ed25519 private key to generate a tamper-proof evidence bundle."
+    description: "Sign a JSON report with an Ed25519 private key; requires format: json."
     required: false
     default: "false"
-
   key:
-    description: "Path to the Ed25519 private key (.pem) for signing. Required if sign is true."
+    description: "Path to the Ed25519 private key (.pem); required when sign is true."
     required: false
     default: ""
-
   signer-id:
-    description: "Identity of the signer (e.g. secops-ci@company.com). Embedded in the signed bundle."
+    description: "Signer identity embedded in the signed bundle."
     required: false
     default: ""
-
   enforce-risk-tier:
-    description: |
-      Block the workflow if the scan finds violations above this risk tier.
-      Accepted values: prohibited | high_risk | limited_risk | minimal_risk
+    description: >
+      Forward the CLI finding threshold: prohibited | high_risk | limited_risk | minimal_risk.
+      Without a threshold, any finding fails the step. Scanner errors always fail.
     required: false
     default: ""
-
   upload-sarif:
-    description: "Upload the SARIF report to GitHub Advanced Security (requires security-events: write permission)."
+    description: >
+      Upload valid SARIF to GitHub Code Scanning (requires security-events: write).
+      Fork pull requests and Dependabot runs do not upload.
     required: false
     default: "true"
-
   python-version:
-    description: "Python version to use. Minimum required: 3.11."
+    description: "Python version to use; minimum 3.11."
     required: false
     default: "3.11"
-
   aicomply-version:
-    description: "AIComply CLI version to install. Defaults to latest stable."
+    description: >
+      aicomply-cli (or empty) installs this action's checked-out source using uv.lock.
+      To override, specify an exact registry requirement: aicomply-cli==VERSION.
     required: false
     default: "aicomply-cli"
 
 outputs:
   sarif-file:
-    description: "Path to the generated SARIF report file."
+    description: "Requested report path; populated on disk only after a completed scan."
     value: ${{ inputs.output }}
-
   findings-count:
-    description: "Total number of compliance violations found."
-    value: ${{ steps.parse-results.outputs.findings_count }}
-
+    description: "Finding count for SARIF; empty for other formats or scanner errors."
+    value: ${{ steps.run-scan.outputs.findings_count }}
   scan-status:
-    description: "Scan outcome: compliant | violations_found | error"
+    description: "Outcome: no_findings (SARIF only) | completed | violations_found | error; no legal conclusion."
     value: ${{ steps.run-scan.outputs.scan_status }}
 
 runs:
@@ -83,65 +75,154 @@ runs:
         python-version: ${{ inputs.python-version }}
 
     - name: Install AIComply CLI
+      id: install
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        AICOMPLY_VERSION: ${{ inputs.aicomply-version }}
       run: |
-        python -m pip install --upgrade pip
-        pip install "${{ inputs.aicomply-version }}"
+        python -I - <<'PY'
+        import os
+        from pathlib import Path
+        import re
+        import subprocess
+        import sys
+        import tempfile
 
-    - name: Execute AIComply Compliance Scan
+        requirement = os.environ["AICOMPLY_VERSION"]
+        if requirement not in ("", "aicomply-cli") and not re.fullmatch(
+            r"aicomply-cli==[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?(?:\.post[0-9]+)?",
+            requirement,
+        ):
+            sys.exit("Expected aicomply-cli or aicomply-cli==VERSION.")
+        if sys.version_info < (3, 11):
+            sys.exit("Python 3.11 or newer is required.")
+        subprocess.run(
+            [sys.executable, "-I", "-m", "pip", "install", "uv==0.8.22"], check=True
+        )
+        environment = Path(tempfile.mkdtemp(prefix="aicomply-env-", dir=os.environ["RUNNER_TEMP"]))
+        uv = [sys.executable, "-I", "-m", "uv", "--no-config"]
+        env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(environment)}
+        if requirement in ("", "aicomply-cli"):
+            subprocess.run(
+                uv + ["sync", "--locked", "--no-dev", "--no-editable",
+                      "--python", sys.executable, "--project", os.environ["ACTION_PATH"]],
+                env=env, check=True,
+            )
+        else:
+            subprocess.run(uv + ["venv", "--python", sys.executable, str(environment)], check=True)
+            interpreter = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+            subprocess.run(
+                uv + ["pip", "install", "--python", str(interpreter), requirement], check=True
+            )
+        interpreter = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+            output.write(f"python={interpreter}\n")
+        PY
+
+    - name: Execute AIComply scan
       id: run-scan
       shell: bash
+      env:
+        AICOMPLY_PYTHON: ${{ steps.install.outputs.python }}
+        SCAN_PATH: ${{ inputs.path }}
+        REPORT_FORMAT: ${{ inputs.format }}
+        REPORT_OUTPUT: ${{ inputs.output }}
+        SIGN_REPORT: ${{ inputs.sign }}
+        SIGNING_KEY: ${{ inputs.key }}
+        SIGNER_ID: ${{ inputs.signer-id }}
+        RISK_TIER: ${{ inputs.enforce-risk-tier }}
+        UPLOAD_SARIF: ${{ inputs.upload-sarif }}
       run: |
-        CMD="aicomply scan ${{ inputs.path }} --format ${{ inputs.format }} --output ${{ inputs.output }}"
-
-        if [ "${{ inputs.sign }}" = "true" ]; then
-          if [ -z "${{ inputs.key }}" ]; then
-            echo "::error::inputs.sign is true but inputs.key is empty."
-            exit 1
-          fi
-          CMD="$CMD --sign --key ${{ inputs.key }}"
-          if [ -n "${{ inputs.signer-id }}" ]; then
-            CMD="$CMD --signer-id ${{ inputs.signer-id }}"
-          fi
-        fi
-
-        $CMD
-        EXIT_CODE=$?
-
-        if [ $EXIT_CODE -eq 0 ]; then
-          echo "scan_status=compliant" >> $GITHUB_OUTPUT
-        elif [ $EXIT_CODE -eq 1 ]; then
-          echo "scan_status=violations_found" >> $GITHUB_OUTPUT
-          if [ -n "${{ inputs.enforce-risk-tier }}" ]; then
-            echo "::warning::Risk tier gate enforced. Violations detected — blocking workflow."
-            exit 1
-          fi
-        else
-          echo "scan_status=error" >> $GITHUB_OUTPUT
-          exit $EXIT_CODE
-        fi
-
-    - name: Parse findings count from SARIF
-      id: parse-results
-      shell: bash
-      if: always()
-      run: |
-        SARIF_FILE="${{ inputs.output }}"
-        if [ -f "$SARIF_FILE" ]; then
-          COUNT=$(python3 -c "
+        python -I - <<'PY'
         import json
-        with open('$SARIF_FILE') as f:
-            data = json.load(f)
-        print(sum(len(run.get('results', [])) for run in data.get('runs', [])))
-          " 2>/dev/null || echo 0)
-          echo "findings_count=$COUNT" >> $GITHUB_OUTPUT
-        else
-          echo "findings_count=0" >> $GITHUB_OUTPUT
-        fi
+        import os
+        from pathlib import Path
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
 
-    - name: Upload SARIF to GitHub Advanced Security
+        def emit(status, count="", ready=False):
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                output.write(f"scan_status={status}\nfindings_count={count}\n")
+                output.write(f"sarif_ready={str(ready).lower()}\n")
+
+        emit("error")
+        report_format = os.environ["REPORT_FORMAT"]
+        risk_tier = os.environ["RISK_TIER"]
+        if report_format not in ("terminal", "json", "markdown", "sarif"):
+            sys.exit(2)
+        if risk_tier not in ("", "prohibited", "high_risk", "limited_risk", "minimal_risk"):
+            sys.exit(2)
+        if any(os.environ[name] not in ("true", "false") for name in ("SIGN_REPORT", "UPLOAD_SARIF")):
+            sys.exit(2)
+        if os.environ["SIGN_REPORT"] == "true" and not os.environ["SIGNING_KEY"]:
+            sys.exit(2)
+        if os.environ["SIGN_REPORT"] == "true" and report_format != "json":
+            print("::error::Signing requires format=json to retain the evidence bundle.")
+            sys.exit(2)
+        if not os.environ["REPORT_OUTPUT"] or not os.environ["SCAN_PATH"]:
+            sys.exit(2)
+
+        with tempfile.TemporaryDirectory(prefix="aicomply-report-", dir=os.environ["RUNNER_TEMP"]) as directory:
+            report = Path(directory) / "report"
+            command = [
+                os.environ["AICOMPLY_PYTHON"], "-I", "-m", "aicomply.cli", "scan",
+                "--format", report_format, "--output", str(report),
+            ]
+            if risk_tier:
+                command.extend(["--enforce-risk-tier", risk_tier])
+            if os.environ["SIGN_REPORT"] == "true":
+                command.extend(["--sign", "--key", str(Path(os.environ["SIGNING_KEY"]).absolute())])
+                if os.environ["SIGNER_ID"]:
+                    command.append("--signer-id=" + os.environ["SIGNER_ID"])
+            command.extend(["--", os.environ["SCAN_PATH"]])
+            try:
+                result = subprocess.run(command, check=False)
+                if result.returncode not in (0, 1):
+                    sys.exit(result.returncode if result.returncode > 0 else 2)
+                if not report.is_file() or report.is_symlink():
+                    raise ValueError("No fresh report")
+                count = ""
+                if report_format == "sarif":
+                    payload = json.loads(report.read_text(encoding="utf-8"))
+                    if payload["version"] != "2.1.0" or not payload["runs"]:
+                        raise ValueError("Invalid SARIF")
+                    count = 0
+                    for run in payload["runs"]:
+                        if not isinstance(run["results"], list):
+                            raise ValueError("Invalid SARIF results")
+                        if not run["invocations"] or any(
+                            invocation["executionSuccessful"] is not True
+                            for invocation in run["invocations"]
+                        ):
+                            raise ValueError("Incomplete SARIF scan")
+                        count += len(run["results"])
+                destination = Path(os.environ["REPORT_OUTPUT"])
+                if any(path.is_symlink() for path in (destination.absolute(), *destination.absolute().parents)):
+                    raise ValueError("Report output is a symlink")
+                shutil.copyfile(report, destination)
+            except (OSError, ValueError, KeyError, TypeError):
+                print("::error::Scan execution or report validation failed.")
+                sys.exit(2)
+            status = "completed"
+            if result.returncode == 1 or (count != "" and count > 0):
+                status = "violations_found"
+            elif count == 0:
+                status = "no_findings"
+            emit(status, count, report_format == "sarif")
+            sys.exit(result.returncode)
+        PY
+
+    - name: Upload SARIF to GitHub Code Scanning
       uses: github/codeql-action/upload-sarif@v4
-      if: always() && inputs.upload-sarif == 'true' && inputs.format == 'sarif'
+      if: >-
+        ${{ !cancelled() && inputs.upload-sarif == 'true' && inputs.format == 'sarif' &&
+            steps.run-scan.outputs.sarif_ready == 'true' &&
+            github.actor != 'dependabot[bot]' &&
+            ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+             github.event.pull_request.head.repo.full_name == github.repository) }}
       with:
         sarif_file: ${{ inputs.output }}
         category: "aicomply-eu-ai-act-gdpr"
