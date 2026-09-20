@@ -159,6 +159,21 @@ def test_report_symlinks_are_not_overwritten(tmp_path, monkeypatch):
     assert target.read_text() == "untouched"
 
 
+def test_report_parent_symlinks_are_not_followed(tmp_path, monkeypatch):
+    target = tmp_path / "outside"
+    target.mkdir()
+    protected = target / "result.sarif"
+    protected.write_text("untouched")
+    link = tmp_path / "reports"
+    link.symlink_to(target, target_is_directory=True)
+    code, outputs, _ = execute_scan(
+        tmp_path, monkeypatch, report=sarif(), REPORT_OUTPUT=str(link / "result.sarif")
+    )
+    assert code == 2
+    assert outputs["sarif_ready"] == "false"
+    assert protected.read_text() == "untouched"
+
+
 @pytest.mark.parametrize("version", ["", "aicomply-cli"])
 def test_default_install_uses_action_source_and_lock(tmp_path, monkeypatch, version):
     source = "/action source/with 'quotes' $(not-executed)"
@@ -172,9 +187,23 @@ def test_default_install_uses_action_source_and_lock(tmp_path, monkeypatch, vers
     sync = run.call_args_list[-1]
     command = sync.args[0]
     assert command[-2:] == ["--project", source]
-    assert {"--locked", "--no-editable", "--no-dev"} <= set(command)
+    assert {"--locked", "--no-editable", "--no-dev", "--no-config"} <= set(command)
     assert sync.kwargs["env"]["UV_PROJECT_ENVIRONMENT"].startswith(str(tmp_path))
     assert "python=" in (tmp_path / "outputs").read_text()
+
+
+def test_pinned_override_ignores_client_uv_configuration(tmp_path, monkeypatch):
+    for key, value in {
+        "AICOMPLY_VERSION": "aicomply-cli==2.0.0a0",
+        "RUNNER_TEMP": str(tmp_path), "GITHUB_OUTPUT": str(tmp_path / "outputs"),
+    }.items():
+        monkeypatch.setenv(key, value)
+    with patch("subprocess.run") as run:
+        exec(compile(action_python("install"), "action.yml", "exec"), {})
+    uv_commands = [call.args[0] for call in run.call_args_list if "uv" in call.args[0]]
+    assert len(uv_commands) == 2
+    assert all(command[1:5] == ["-I", "-m", "uv", "--no-config"] for command in uv_commands)
+    assert uv_commands[-1][-1] == "aicomply-cli==2.0.0a0"
 
 
 @pytest.mark.parametrize("version", ["aicomply-cli>=1", ".", "git+https://example.org/client", '$(touch INJECTED)', "aicomply-cli; echo unsafe"])

@@ -101,7 +101,7 @@ runs:
             [sys.executable, "-I", "-m", "pip", "install", "uv==0.8.22"], check=True
         )
         environment = Path(tempfile.mkdtemp(prefix="aicomply-env-", dir=os.environ["RUNNER_TEMP"]))
-        uv = [sys.executable, "-I", "-m", "uv"]
+        uv = [sys.executable, "-I", "-m", "uv", "--no-config"]
         env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(environment)}
         if requirement in ("", "aicomply-cli"):
             subprocess.run(
@@ -200,7 +200,7 @@ runs:
                             raise ValueError("Incomplete SARIF scan")
                         count += len(run["results"])
                 destination = Path(os.environ["REPORT_OUTPUT"])
-                if destination.is_symlink():
+                if any(path.is_symlink() for path in (destination.absolute(), *destination.absolute().parents)):
                     raise ValueError("Report output is a symlink")
                 shutil.copyfile(report, destination)
             except (OSError, ValueError, KeyError, TypeError):
