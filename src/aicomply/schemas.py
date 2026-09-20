@@ -5,7 +5,6 @@ hallazgos de auditoría (findings) y reportes de conformidad.
 """
 
 from enum import Enum
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -176,6 +175,15 @@ class ScanSummary(BaseModel):
     execution_time_ms: float = 0.0
 
 
+class SourceManifestEntry(BaseModel):
+    """Bytes captured for analysis, before decoding or newline normalization."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    path: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=0)
+
+
 class ScanReport(BaseModel):
     """Payload canónico del reporte de conformidad emitido por AIComply."""
     model_config = ConfigDict(frozen=True)
@@ -185,6 +193,19 @@ class ScanReport(BaseModel):
     target_path: str
     summary: ScanSummary
     findings: List[Finding]
+    source_manifest: List[SourceManifestEntry] = Field(default_factory=list)
+    source_manifest_hash: Optional[str] = Field(
+        default=None, description="SHA-256 of sorted source manifest entries as canonical JSON"
+    )
+    active_rule_ids: List[str] = Field(default_factory=list)
+    rules_fingerprint: Optional[str] = Field(
+        default=None, description="SHA-256 of validated active rule definitions sorted by ID"
+    )
+    config_fingerprint: Optional[str] = Field(
+        default=None, description="SHA-256 of effective_config as canonical JSON"
+    )
+    effective_config: Dict[str, object] = Field(default_factory=dict)
+    exclusions: Dict[str, str] = Field(default_factory=dict)
 
 
 class SignedEvidenceBundle(BaseModel):
