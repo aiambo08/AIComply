@@ -142,7 +142,7 @@ def fully_safe(flag):
     assert len(art14_findings) == 0
 
 
-def test_human_in_the_loop_gate_prevents_violation(rules):
+def test_nominal_human_approval_does_not_suppress_unvalidated_flow(rules):
     code = """
 import os
 import openai
@@ -159,7 +159,12 @@ def gated_agent(is_human_approved):
     findings = engine.analyze_file(tree, code, "agent.py")
 
     art14_findings = [f for f in findings if f.rule_id == "EUAIA-ART14-002"]
-    assert len(art14_findings) == 0
+    assert len(art14_findings) == 1
+    finding = art14_findings[0]
+    assert "os.system" in finding.message
+    assert [step.step_type for step in finding.flow_steps] == [
+        "source", "propagation", "sink"
+    ]
 
 
 def test_art50_synthetic_output_taint(rules):

@@ -1,4 +1,6 @@
 from pathlib import Path
+import pytest
+
 from aicomply.config import AIComplyConfig, load_project_config
 
 
@@ -34,11 +36,9 @@ enforce_risk_tier: "high_risk"
     assert cfg.enforce_risk_tier == "high_risk"
 
 
-def test_load_corrupted_config_fallback(tmp_path: Path):
+def test_load_corrupted_config_fails_explicitly(tmp_path: Path):
     config_file = tmp_path / ".aicomply.yaml"
     config_file.write_text("corrupted: yaml: : [invalid", encoding="utf-8")
 
-    cfg = load_project_config(tmp_path)
-    # Debe retornar la configuración por defecto sin crashear
-    assert isinstance(cfg, AIComplyConfig)
-    assert "tests/**" in cfg.exclude_paths
+    with pytest.raises(ValueError, match="Invalid project configuration"):
+        load_project_config(tmp_path)

@@ -11,11 +11,12 @@ Esta propuesta refuerza un producto local alpha y deja una base verificable
 para revisión. No se ha publicado en PyPI, desplegado un servicio ni realizado
 una evaluación jurídica de un cliente.
 
-Hay siete casos de prueba incompatibles con los contratos de seguridad y
-prudencia jurídica propuestos. La suite completa sigue fallando. No se han
-desactivado pruebas, rebajado umbrales ni añadido `|| true`. Se requiere
-aprobar la actualización explícita de esas expectativas antes de cerrar
-el gate; las alternativas se detallan abajo.
+El responsable autorizó actualizar las siete expectativas incompatibles con
+los contratos de seguridad y prudencia jurídica. La suite completa pasa
+**502 pruebas** y el gate integrado local de distribución termina correctamente.
+No se han desactivado pruebas, rebajado umbrales ni añadido `|| true`.
+Quedan la comprobación remota de esta revisión, la decisión de política del
+autoescaneo y las condiciones operativas y regulatorias detalladas abajo.
 
 El [system prompt especializado](AGENT_SYSTEM_PROMPT.md) fue aplicado a la
 implementación: evidencia antes que afirmaciones, revisión normativa contextual,
@@ -82,9 +83,9 @@ Entorno local: Linux, CPython 3.11.13, uv 0.8.22 y dependencias de `uv.lock`.
 | `uv run ruff check .` | Correcto; conjunto de reglas configurado en `pyproject.toml` |
 | `uv run mypy` | Correcto; clasificador en modo estricto |
 | Mypy adicional de consola/clasificador y evidencia con imports silenciosos | Correcto; no implica tipado estricto de todo el producto |
-| Suite completa `uv run pytest -q` | **495 correctas, 7 fallidas**; casos descritos abajo |
-| `uv run --frozen python scripts/check_quality.py` | **Bloqueado por pytest**; no alcanza el gate de distribución en la ejecución integrada |
-| Build independiente de wheel y sdist | Correcto como diagnóstico, sin autorizar release |
+| Suite completa `uv run pytest -q` | **502 correctas, ninguna fallida**; ejecutada dentro del gate integrado |
+| `uv run --frozen python scripts/check_quality.py` | Correcto de principio a fin: lint, tipos, tests, build e instalación aislada |
+| Build de wheel y sdist | Correcto dentro del gate integrado; sin publicar |
 | Comparación de recursos YAML/UI en ambos archivos | Correcta |
 | Instalación de wheel fuera del checkout, dependencias con hashes y `pip check` | Correcto |
 | Entry points `aicomply`, `aicomply-cli` y smoke SARIF del paquete instalado | Correctos |
@@ -93,10 +94,11 @@ Entorno local: Linux, CPython 3.11.13, uv 0.8.22 y dependencias de `uv.lock`.
 | API HTTP por tests automatizados | Verificada; no equivale a una prueba visual de navegador |
 | Recorrido de consola en Chrome con proyectos sintéticos | Escaneo, detalles/SARIF, evaluación contextual, Anexo IV y verificación de evidencia comprobados; inputs adversariales rechazados |
 | Accesibilidad completa, concurrencia y presupuestos exhaustivos | **No verificados** |
-| Matriz remota Python 3.11/3.13 | Reproduce 495 correctas y los mismos 7 fallos de contrato |
+| Matriz remota Python 3.11/3.13 | Pendiente de ejecución sobre los contratos actualizados; la revisión anterior reproducía los siete fallos |
 
-Los checks independientes del paquete no sustituyen la suite completa ni el
-gate de release. Repetir el gate integrado tras corregir los contratos.
+Los 126 tests de los módulos modificados también pasaron antes del gate completo.
+La validación local del paquete no sustituye los demás controles de lanzamiento
+ni la aprobación para publicar.
 
 ### Prueba de consola autorizada
 
@@ -119,22 +121,36 @@ en esta revisión, por lo que ese recorrido no se pudo ejecutar.
 No se probaron exhaustivamente consumo de recursos, concurrencia, cancelación,
 otras plataformas, accesibilidad, impresión/PDF ni todas las ramas regulatorias.
 
-### Siete incompatibilidades que requieren aprobación
+### Siete incompatibilidades resueltas con autorización
 
-| Prueba | Expectativa actual | Contrato propuesto |
+Actualización autorizada el 2026-09-20. Se mantienen casos positivos y negativos,
+incluido Compose sin aliases, imports inventariados y la traza completa del LLM
+al sink aunque exista una variable de aprobación humana.
+
+| Prueba | Expectativa anterior | Contrato aceptado y comprobado |
 |---|---|---|
 | CLI, proyecto sin findings | Texto `CONFORMIDAD TÉCNICA VALIDADA` | Código 0 conservado; texto sin hallazgos, sin conclusión jurídica |
 | Anexo IV, imports de ejemplo | `Conformidad Plena` | Clasificación pendiente y evidencias por aportar |
 | Configuración corrupta | Volver silenciosamente a defaults | Error explícito sin generar reporte de éxito |
 | Compose con alias (dos casos) | Aceptar anchors/merge aliases | Rechazo uniforme de aliases para evitar expansión/ciclos; copia expandida revisada como entrada alternativa |
 | Taint, `is_human_approved` | Suprimir el finding por el nombre de la variable | Mantener señal hasta demostrar validación y supervisión efectiva |
-| Benchmark TN-03 | Tratar la misma compuerta nominal como negativo cierto | Revisar su ground truth y añadir negativos con validación real; conservar exigencia de detección |
+| Benchmark TN-03 | Tratar la misma compuerta nominal como negativo cierto | Conservar su código como TP-16 y exigir `EUAIA-ART14-002`; añadir TN-16 con selección cerrada de comandos constantes |
 
-Actualizar estas pruebas requiere cambiar sus contratos de forma expresa,
-manteniendo verificaciones negativas y positivas. No se propone bajar el
-95% del benchmark ni ignorarlo. Con el ground truth actual mide 15/15 positivos,
-14/15 negativos, precisión 93,75%, recall 100% y F1 96,77% en **30 fixtures
-sintéticas**. Son métricas de ese conjunto, no eficacia normativa o comercial.
+Se conservan los umbrales del **95%** para precisión, recall y F1. Con las
+etiquetas anteriores se obtenían 15/15 positivos y 14/15 negativos: precisión
+93,75%, recall 100% y F1 96,77% sobre 30 fixtures. El código de TN-03 no validaba
+el comando ni demostraba supervisión efectiva; se conserva sin cambios como
+positivo TP-16. TN-16 solo ejecuta comandos literales elegidos mediante dos
+opciones explícitas y retorna para cualquier otra entrada.
+
+El corpus revisado tiene **31 fixtures sintéticas**: 16/16 positivos,
+15/15 negativos, cero falsos positivos/negativos y precisión/recall/F1 del 100%
+en esta ejecución. Se mide presencia de señales por archivo y la regla esperada
+en positivos; no exactitud por hallazgo. La variación se debe a corregir la
+etiqueta y añadir un caso, no a mejorar el motor entre ambas mediciones.
+Estos resultados son regresiones del catálogo, no evaluación independiente,
+eficacia normativa o comercial. Los negativos con sanitizadores o supresiones
+dependen de los supuestos del catálogo; no verifican su efectividad real.
 
 Otra alternativa para Compose sería diseñar expansión limitada, con límites
 de profundidad/nodos y detección de ciclos compartidos por todos los lectores.
@@ -174,8 +190,8 @@ completo contra vulnerabilidades del intérprete.
 
 ### Gates del candidato local
 
-- Aprobar contratos pendientes, actualizar sus pruebas y obtener suite y CI
-  completas en verde sin exclusiones de emergencia.
+- Confirmar la matriz remota de calidad tras los contratos ya aprobados y
+  resolver la política del autoescaneo sin exclusiones de emergencia.
 - Fijar ground truth del benchmark con datos autorizados, revisión experta,
   versión de reglas y método de medición; añadir repositorios representativos.
 - Cotejar con asesoría jurídica el texto consolidado y acto modificativo del
@@ -220,8 +236,8 @@ sí fija el entorno reproducido en esta revisión.
 
 ## Orden de cierre
 
-1. Decidir los contratos pendientes de pruebas y la política del autoescaneo.
-2. Obtener los gates automatizados completos y completar los casos UI pendientes.
+1. Confirmar los gates remotos y decidir la política del autoescaneo.
+2. Completar los casos UI pendientes.
 3. Completar revisión jurídica, benchmark representativo y controles operativos.
 4. Revisar/mergear PR, aplicar el blueprint compatible y publicar una versión
    solo con autorización y con el gate de distribución superado.

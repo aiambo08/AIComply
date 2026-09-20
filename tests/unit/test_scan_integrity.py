@@ -169,14 +169,24 @@ def test_invalid_inputs_do_not_produce_clean_reports(
         ScanEngine(catalog).scan_path(tmp_path)
 
 
+def test_compose_without_aliases_remains_supported(tmp_path: Path, catalog: RuleCatalog):
+    (tmp_path / "compose.yml").write_bytes(
+        b"services:\n  app:\n    image: test\n    user: nonroot\n"
+    )
+    report = ScanEngine(catalog).scan_path(tmp_path)
+    assert report.summary.total_files_scanned == 1
+    assert report.findings == []
+
+
 @pytest.mark.parametrize("content", [
-    b"services:\n  app:\n    image: test\n    user: nonroot\n",
     b"services:\n  app: &app\n    image: test\n    user: nonroot\n  other: *app\n",
     b"services:\n  app: &app\n    image: test\n  other:\n    <<: *app\n    image: override\n",
 ])
-def test_valid_compose_aliases_remain_supported(tmp_path: Path, catalog: RuleCatalog, content: bytes):
+def test_compose_aliases_are_rejected_explicitly(tmp_path: Path, catalog: RuleCatalog, content: bytes):
     (tmp_path / "compose.yml").write_bytes(content)
-    assert ScanEngine(catalog).scan_path(tmp_path).summary.total_files_scanned == 1
+    with pytest.raises(ValueError, match="Unable to fully parse") as error:
+        ScanEngine(catalog).scan_path(tmp_path)
+    assert "YAML aliases are not supported" in str(error.value.__cause__)
 
 
 @pytest.mark.parametrize("requirement", [
