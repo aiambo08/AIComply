@@ -1,4 +1,5 @@
 recursive-include src/aicomply/rules *.yaml *.yml
+recursive-include src/aicomply/ui/static *
 include README.md
 include pyproject.toml
 include .pre-commit-hooks.yaml

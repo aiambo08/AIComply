@@ -6,38 +6,28 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-publish:
-    name: Build distribution and publish to PyPI
+  quality:
+    uses: ./.github/workflows/quality.yml
+
+  publish:
+    name: Publish verified distributions
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/aicomply-cli
     permissions:
-      id-token: write  # Mandatory for PyPI Trusted Publishing
-      contents: read
-
+      id-token: write
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Download verified distributions
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.11"
-
-      - name: Install build tool (uv)
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Build sdist and wheel
-        run: |
-          uv build
-
+          name: python-distributions
+          path: dist/
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
-          # Note: If not using Trusted Publishing, configure PYPI_API_TOKEN secret:
-          # password: ${{ secrets.PYPI_API_TOKEN }}
