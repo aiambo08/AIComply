@@ -166,6 +166,7 @@ async function evaluateStatutoryAssessment() {
 }
 
 function resetVerification() {
+    element('verifier-result-panel').dataset.verification = 'unverified';
     text('verifier-status-text', 'NOT VERIFIED');
     text('verifier-status-badge', 'NOT VERIFIED');
     for (const id of ['v-signer-id', 'v-timestamp', 'v-scan-id', 'v-key-fingerprint']) text(id, '--');
@@ -195,6 +196,7 @@ async function executeVerification() {
     const data = await request('/api/verify', {
         bundle: uploadedBundle, public_key: element('verifier-public-key').value,
     });
+    element('verifier-result-panel').dataset.verification = data.valid ? 'valid' : 'invalid';
     text('verifier-status-text', data.valid ? 'SIGNATURE MATCHES SUPPLIED KEY' : 'VERIFICATION FAILED');
     text('verifier-status-badge', data.valid ? 'MATCH' : 'INVALID');
     text('v-signer-id', data.signer_id);

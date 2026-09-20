@@ -91,11 +91,33 @@ Entorno local: Linux, CPython 3.11.13, uv 0.8.22 y dependencias de `uv.lock`.
 | Compilación Tailwind 3.4.17 y sintaxis de JavaScript | Correctas |
 | `pre-commit validate-manifest` | Correcto; hook con tipos alternativos |
 | API HTTP por tests automatizados | Verificada; no equivale a una prueba visual de navegador |
-| Navegador, accesibilidad y recorrido manual del usuario | **No realizados; requieren aprobación de prueba UI** |
-| Matriz remota Python 3.11/3.13 | Definida en CI; no certificada por la ejecución local de 3.11 |
+| Recorrido de consola en Chrome con proyectos sintéticos | Escaneo, detalles/SARIF, evaluación contextual, Anexo IV y verificación de evidencia comprobados; inputs adversariales rechazados |
+| Accesibilidad completa, concurrencia y presupuestos exhaustivos | **No verificados** |
+| Matriz remota Python 3.11/3.13 | Reproduce 495 correctas y los mismos 7 fallos de contrato |
 
 Los checks independientes del paquete no sustituyen la suite completa ni el
 gate de release. Repetir el gate integrado tras corregir los contratos.
+
+### Prueba de consola autorizada
+
+Se ejecutó un recorrido grabado en Chrome con proyectos sintéticos y claves
+efímeras: ausencia de señales sin prometer conformidad, hallazgos y selección
+de detalles, SARIF descargable, contexto desconocido, perfilado, GPAI, Art. 5,
+Anexo IV y recuperación tras errores de firma o symlinks. Texto hostil se
+mostró literalmente; el marcador sintético de ejecución del código cliente
+no apareció.
+
+Se aceptó evidencia válida y se rechazaron manipulación, duplicados, campos
+omitidos/adicionales y tamaño excesivo. Los probes HTTP complementarios
+comprobaron confinamiento, Host/Origin, esquema y límites de petición.
+
+La prueba detectó que la etiqueta `INVALID` conservaba el verde del resultado
+válido. Se separaron los estados visuales: sin verificar neutro, firma válida
+verde y firma rechazada rojo. No existen controles de filtrado de hallazgos
+en esta revisión, por lo que ese recorrido no se pudo ejecutar.
+
+No se probaron exhaustivamente consumo de recursos, concurrencia, cancelación,
+otras plataformas, accesibilidad, impresión/PDF ni todas las ramas regulatorias.
 
 ### Siete incompatibilidades que requieren aprobación
 
@@ -158,8 +180,8 @@ completo contra vulnerabilidades del intérprete.
   versión de reglas y método de medición; añadir repositorios representativos.
 - Cotejar con asesoría jurídica el texto consolidado y acto modificativo del
   AI Omnibus, fuentes/fechas, sanciones, excepciones y rol de cada cliente.
-- Ejecutar el recorrido de UI (scan, filtros, assessment, Anexo IV y verificación),
-  incluyendo accesibilidad y errores de formato/límites.
+- Completar accesibilidad de UI y pruebas de límites/concurrencia; decidir si
+  se requieren filtros de hallazgos antes del lanzamiento.
 - Validar plataformas realmente soportadas, consumo y concurrencia en
   repositorios grandes; verificar recuperación tras timeout o cancelación.
 - Revisar dependencias, licencias, procedencia del paquete, versionado,
@@ -199,7 +221,7 @@ sí fija el entorno reproducido en esta revisión.
 ## Orden de cierre
 
 1. Decidir los contratos pendientes de pruebas y la política del autoescaneo.
-2. Obtener los gates automatizados completos y probar UI con aprobación.
+2. Obtener los gates automatizados completos y completar los casos UI pendientes.
 3. Completar revisión jurídica, benchmark representativo y controles operativos.
 4. Revisar/mergear PR, aplicar el blueprint compatible y publicar una versión
    solo con autorización y con el gate de distribución superado.

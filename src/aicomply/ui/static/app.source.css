@@ -26,4 +26,9 @@
 
 .material-symbols-outlined { font-family: ui-monospace, monospace; }
 button:disabled { opacity: .5; cursor: wait; }
+#verifier-result-panel { --verification-color: #94a3b8; }
+#verifier-result-panel[data-verification="valid"] { --verification-color: #00f59b; }
+#verifier-result-panel[data-verification="invalid"] { --verification-color: #ff3355; }
+#verifier-status-text, #verifier-status-badge { color: var(--verification-color); }
+#verifier-status-badge { border-color: var(--verification-color); }
 @media(max-width: 850px) { header { flex-wrap: wrap; height: auto !important; gap: 1rem; padding: 1rem; } nav { flex-wrap: wrap; } #view-matrix { flex-direction: column; } #view-matrix > div { width: 100%; } }
