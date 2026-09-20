@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+        body { background-color: #07090e; color: #f8fafc; font-family: system-ui, sans-serif; }
+        .cyber-panel { background-color: #0e121a; border: 1px solid #1b2333; }
+        .cyber-panel:hover { border-color: #2a374f; }
+        .cyber-border-emerald { border: 1px solid #00f59b; box-shadow: 0 0 15px rgba(0, 245, 155, 0.15); }
+        .cyber-border-crimson { border: 1px solid #ff3355; box-shadow: 0 0 15px rgba(255, 51, 85, 0.15); }
+        .cyber-border-amber { border: 1px solid #ffb800; box-shadow: 0 0 15px rgba(255, 184, 0, 0.15); }
+        .data-badge { font-family: ui-monospace, monospace; font-size: 11px; padding: 2px 6px; border-radius: 2px; }
+        .grid-pattern {
+            background-image: radial-gradient(rgba(27, 35, 51, 0.6) 1px, transparent 1px);
+            background-size: 16px 16px;
+        }
+        @keyframes pulseAlert {
+            0% { box-shadow: 0 0 0 0 rgba(255, 51, 85, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(255, 51, 85, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 51, 85, 0); }
+        }
+        .pulse-hazard { animation: pulseAlert 2s infinite; }
+        .scrollbar-dark::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-dark::-webkit-scrollbar-track { background: #07090e; }
+        .scrollbar-dark::-webkit-scrollbar-thumb { background: #1b2333; border-radius: 3px; }
+        .scrollbar-dark::-webkit-scrollbar-thumb:hover { background: #2d3748; }
+
+.material-symbols-outlined { font-family: ui-monospace, monospace; }
+button:disabled { opacity: .5; cursor: wait; }
+@media(max-width: 850px) { header { flex-wrap: wrap; height: auto !important; gap: 1rem; padding: 1rem; } nav { flex-wrap: wrap; } #view-matrix { flex-direction: column; } #view-matrix > div { width: 100%; } }
