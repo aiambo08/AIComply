@@ -13,7 +13,7 @@ una evaluación jurídica de un cliente.
 
 El responsable autorizó actualizar las siete expectativas incompatibles con
 los contratos de seguridad y prudencia jurídica. La suite completa pasa
-**502 pruebas** y el gate integrado local de distribución termina correctamente.
+**531 pruebas** y el gate integrado local de distribución termina correctamente.
 No se han desactivado pruebas, rebajado umbrales ni añadido `|| true`.
 La matriz remota de calidad pasa en Python 3.11 y 3.13 sobre `f4ac0e6`.
 Quedan la decisión de política del autoescaneo y las condiciones operativas y
@@ -84,7 +84,7 @@ Entorno local: Linux, CPython 3.11.13, uv 0.8.22 y dependencias de `uv.lock`.
 | `uv run ruff check .` | Correcto; conjunto de reglas configurado en `pyproject.toml` |
 | `uv run mypy` | Correcto; clasificador en modo estricto |
 | Mypy adicional de consola/clasificador y evidencia con imports silenciosos | Correcto; no implica tipado estricto de todo el producto |
-| Suite completa `uv run pytest -q` | **502 correctas, ninguna fallida**; ejecutada dentro del gate integrado |
+| Suite completa `uv run pytest -q` | **531 correctas, ninguna fallida**; ejecutada dentro del gate integrado |
 | `uv run --frozen python scripts/check_quality.py` | Correcto de principio a fin: lint, tipos, tests, build e instalación aislada |
 | Build de wheel y sdist | Correcto dentro del gate integrado; sin publicar |
 | Comparación de recursos YAML/UI en ambos archivos | Correcta |
@@ -100,6 +100,24 @@ Entorno local: Linux, CPython 3.11.13, uv 0.8.22 y dependencias de `uv.lock`.
 Los 126 tests de los módulos modificados también pasaron antes del gate completo.
 La validación local del paquete no sustituye los demás controles de lanzamiento
 ni la aprobación para publicar.
+
+### Corrección de `try/finally` tras revisión
+
+La revisión detectó un error de gravedad media: `finally` podía volver alcanzable
+un sink posterior a `return`, `raise`, `break` o `continue`, produciendo falsos
+hallazgos. Además, quedaba un camino directo que omitía los efectos de `finally`.
+El CFG ahora desvía las salidas que abandonan el bloque protegido a copias de
+`finally` por destino, separadas de la continuación normal. Los saltos de bucles
+internos permanecen dentro del bloque; una terminación del propio `finally`
+puede sustituir la transferencia pendiente.
+
+Las 29 regresiones nuevas incluyen caminos normales y abruptos, `else`, handlers,
+anidamiento, reasignaciones y sinks que sí deben detectarse. Antes de la corrección
+fallaban 18; después pasan las 29 y los 81 tests seleccionados de CFG, taint y
+benchmark. Se repitió el gate completo: **531 correctas**, build, instalación
+aislada y smoke SARIF correctos. El autoescaneo conserva sus 23 hallazgos y código
+1. La selección de handlers sigue siendo conservadora; esta corrección no
+equivale a modelar todas las excepciones posibles de Python.
 
 ### Prueba de consola autorizada
 

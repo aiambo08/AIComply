@@ -251,15 +251,37 @@ class CFGBuilder:
                     )
                     handler_exit.add_successor(join)
                 if stmt.finalbody:
+                    protected_nodes = [try_node, *all_nodes[body_start:]]
+                    protected_set = set(protected_nodes)
+                    abrupt_exits: dict[CFGNode, list[CFGNode]] = {}
+                    for protected_node in protected_nodes:
+                        for destination in list(protected_node.successors):
+                            if destination not in protected_set:
+                                abrupt_exits.setdefault(destination, []).append(
+                                    protected_node
+                                )
+                                protected_node.successors.remove(destination)
+                                destination.predecessors.remove(protected_node)
+
+                    for destination, predecessors in abrupt_exits.items():
+                        abrupt_finally = self._create_node(
+                            None, label="FINALLY_ABRUPT"
+                        )
+                        all_nodes.append(abrupt_finally)
+                        for predecessor in predecessors:
+                            predecessor.add_successor(abrupt_finally)
+                        finally_exit = self._build_block(
+                            stmt.finalbody,
+                            abrupt_finally,
+                            exit_node,
+                            all_nodes,
+                            loop_targets,
+                        )
+                        finally_exit.add_successor(destination)
+
                     finally_entry = self._create_node(None, label="FINALLY")
                     all_nodes.append(finally_entry)
                     join.add_successor(finally_entry)
-                    for body_node in all_nodes[body_start:]:
-                        if isinstance(
-                            body_node.ast_node,
-                            (ast.Return, ast.Raise, ast.Break, ast.Continue),
-                        ):
-                            body_node.add_successor(finally_entry)
                     curr = self._build_block(
                         stmt.finalbody,
                         finally_entry,
