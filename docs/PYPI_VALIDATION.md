@@ -1,6 +1,6 @@
 # Validación de AIComply para un piloto y publicación PyPI
 
-Revisión: 20 de septiembre de 2026; validadores y gates actualizados el
+Revisión: 20 de septiembre de 2026; validadores, gates y publicación actualizados el
 21 de septiembre de 2026. Repositorio: `aiambo08/AIComply`.
 
 ## Veredicto
@@ -9,14 +9,42 @@ AIComply permite localizar ciertos usos peligrosos de IA y producir evidencia
 revisable dentro del repositorio del cliente. La CLI puede servir para un
 piloto supervisado; todavía no debe ser un control único de seguridad ni una
 certificación de cumplimiento. La corrección autorizada de los cinco validadores
-nominales pasa los gates completos. La publicación nueva sigue pendiente de
-aprobación y de la ejecución real de Trusted Publishing.
+nominales pasa los gates completos. El responsable autorizó la fusión y la
+publicación de la alpha; Trusted Publishing y la verificación posterior terminaron
+correctamente el 21 de septiembre de 2026.
 
-El repositorio y PyPI difieren: PyPI sirve **0.1.0**, cuya instalación, ayuda,
-dependencias y hashes de wheel/sdist se comprobaron en un entorno nuevo.
-La distribución preparada aquí es **2.0.0a0**: se construye, valida e instala,
-pero **no se ha subido a PyPI**. Una subida histórica mediante Trusted
-Publishing y su procedencia pública no prueban que la siguiente vaya a pasar.
+PyPI sirve [**2.0.0a0**](https://pypi.org/project/aicomply-cli/2.0.0a0/),
+correspondiente al [tag v2.0.0a0](https://github.com/aiambo08/AIComply/tree/v2.0.0a0)
+y al commit `ea1afdb56124c89d465f70923a184add0f4a3095` de la PR #2 fusionada.
+La estable **0.1.0** sigue disponible; pip puede preferirla si no se selecciona
+la alpha explícitamente.
+
+## Publicación verificada
+
+El [workflow 35587531905](https://github.com/aiambo08/AIComply/actions/runs/35587531905)
+pasó los gates en Python 3.11/3.13, publicó los artefactos verificados y completó
+el job de instalación desde PyPI. Una instalación local nueva fuera del checkout
+también pasó `pip check`, ambos entry points y los escenarios de
+`smoke_distribution.py`.
+
+Los artefactos descargados del job de calidad coinciden con la API pública de PyPI:
+
+| Archivo | SHA-256 |
+|---|---|
+| `aicomply_cli-2.0.0a0-py3-none-any.whl` | `3553a99979f4a75d912684593f14517c10b3e15b0830458cbb22f01be0cd51f5` |
+| `aicomply_cli-2.0.0a0.tar.gz` | `d899c75411c82dd0bee20e64a88d1ce93c54807611e7de77a5953074ee79c509` |
+
+La procedencia pública del
+[wheel](https://pypi.org/integrity/aicomply-cli/2.0.0a0/aicomply_cli-2.0.0a0-py3-none-any.whl/provenance)
+y del
+[sdist](https://pypi.org/integrity/aicomply-cli/2.0.0a0/aicomply_cli-2.0.0a0.tar.gz/provenance)
+identifica `aiambo08/AIComply`, `publish.yml` y el entorno `pypi`, con los mismos
+hashes. Ningún archivo está retirado mediante `yanked`.
+
+El primer intento local inmediatamente posterior a la subida solo encontró
+0.1.0. Tras aparecer los nuevos archivos en el índice simple, el mismo comando
+de instalación exacta funcionó sin cambios. Este retraso de propagación no
+requirió otra subida ni cambiar la versión.
 
 ## Problema empresarial y utilidad comprobada
 
@@ -108,9 +136,10 @@ Se ejecutó `scripts/check_quality.py` en Linux con CPython 3.11.13 y 3.13.7:
 | Sdist con pip y resolución desde PyPI sin caché | Instalado fuera del checkout; `pip check` correcto |
 | Escenarios de `smoke_distribution.py` en ambas instalaciones | Correctos |
 | Hashes del wheel/sdist **publicados 0.1.0** | Coinciden con la metadata pública de PyPI |
-| Publicación real de **2.0.0a0** | Pendiente; ningún tag de publicación creado |
-| Ejecución manual de `publish.yml` desde esta sesión | No autorizada por la integración GitHub (HTTP 403); requiere un mantenedor con permiso de Actions |
-| Navegador/Windows/macOS/Python distintos de 3.11 y 3.13 | No probados en esta revisión |
+| Publicación real de **2.0.0a0** | Correcta desde `v2.0.0a0`; hashes, procedencia pública e instalación exacta comprobados |
+| Intento manual previo de `publish.yml` | La integración devolvió HTTP 403; la publicación autorizada se activó posteriormente mediante push del tag |
+| Consola en Chrome | Cinco validadores nominales, acciones constantes, reasignación limpia y descarga SARIF comprobados |
+| Windows/macOS/Python distintos de 3.11 y 3.13 | No probados en esta revisión |
 
 El smoke instalado comprueba ambos entry points, versión, procedencia de imports,
 assets locales, código cliente no ejecutado, escaneo limpio/peligroso/acotado,
@@ -158,7 +187,7 @@ política de tratamiento requiere una decisión independiente; no se han silenci
    investigar antes de reintentar. PyPI no permite reemplazar los mismos archivos;
    no reutilizar versiones o tags para distribuir contenido diferente.
 
-Tras confirmar la publicación de esta alpha:
+Instalación de la alpha publicada (Linux/macOS, con Python 3.11 disponible):
 
 ```bash
 python3.11 -m venv .venv-aicomply
@@ -167,8 +196,7 @@ python3.11 -m venv .venv-aicomply
 .venv-aicomply/bin/aicomply --help
 ```
 
-Este comando **todavía no instala la versión preparada**, porque no está
-publicada. `pip install aicomply-cli` sin versión puede seleccionar la estable
+Este comando selecciona la alpha verificada. `pip install aicomply-cli` sin versión puede seleccionar la estable
 0.1.0; usar la versión alpha explícita o una política consciente de `--pre`.
 
 Referencias: [Trusted Publishing](https://docs.pypi.org/trusted-publishers/),
