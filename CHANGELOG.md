@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+- Add modern SDK source coverage for OpenAI Responses, asynchronous/Azure OpenAI,
+  asynchronous Anthropic and Google GenAI, with paired synthetic regressions.
+- Validate wheel/sdist metadata with strict Twine checks and exercise installed
+  client scenarios using both locked dependencies and fresh pip resolution.
+- Restrict publishing to tag pushes; verify the published hashes and install the
+  exact PyPI version in a separate job without publishing permissions.
+- Normalize the prepared prerelease to `2.0.0a0` and add PyPI license/project metadata.
+- Preserve execution taint through generic schema validators and nominal human
+  gates. Reclassify the unconstrained Pydantic benchmark case with owner approval,
+  retaining the 0.95 thresholds and constant-action negatives; exercise the fix
+  in installed wheel/sdist scenarios. Catalog-specific sanitizers still require
+  manual policy review.
+- Publication remains pending. Historical claims below are not evidence of
+  whole-program soundness or accuracy on real client repositories.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

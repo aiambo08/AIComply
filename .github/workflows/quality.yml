@@ -27,7 +27,7 @@ jobs:
       - name: Install pinned package manager
         run: python -m pip install uv==0.8.22
       - name: Install locked development dependencies
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --extra dev --python ${{ matrix.python }}
       - name: Check release tag matches package version
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -38,8 +38,8 @@ jobs:
           from packaging.version import Version
           version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
           tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
-          if Version(tag) != Version(version):
-              raise SystemExit("Release tag must match project.version")
+          if tag != str(Version(version)):
+              raise SystemExit("Release tag must match canonical project.version (e.g. v2.0.0a0)")
           PY
       - name: Lint, type check, test, build and verify installed wheel
         run: uv run --frozen python scripts/check_quality.py

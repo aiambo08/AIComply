@@ -4,11 +4,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aicomply-cli"
-version = "2.0.0-alpha"
-description = "Deterministic EU AI Act & GDPR Compliance SAST, Taint Tracking & Infrastructure Engine"
+version = "2.0.0a0"
+description = "Local static analysis of AI code risks with EU AI Act and GDPR review evidence"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Aibo Ni" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance"
+]
 dependencies = [
     "typer>=0.12.0",
     "pydantic>=2.7.0",
@@ -16,6 +26,12 @@ dependencies = [
     "rich>=13.7.0",
     "cryptography>=42.0.0"
 ]
+
+[project.urls]
+Homepage = "https://github.com/aiambo08/AIComply"
+Documentation = "https://github.com/aiambo08/AIComply#readme"
+Issues = "https://github.com/aiambo08/AIComply/issues"
+Changelog = "https://github.com/aiambo08/AIComply/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
@@ -25,7 +41,8 @@ dev = [
     "mypy==1.17.1",
     "build==1.3.0",
     "setuptools==80.9.0",
-    "wheel==0.45.1"
+    "wheel==0.45.1",
+    "twine==6.1.0",
 ]
 
 [project.scripts]

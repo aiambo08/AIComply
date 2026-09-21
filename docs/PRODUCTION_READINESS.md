@@ -6,6 +6,14 @@ distribución, documentación y CI del repositorio.
 
 ## Decisión
 
+La [validación adicional de PyPI y escenarios empresariales](PYPI_VALIDATION.md)
+documenta el estado posterior a esta revisión: 625 pruebas correctas en Python
+3.11/3.13, omisiones de SDK corregidas y wheel/sdist instalados fuera del checkout.
+La corrección autorizada de cinco validadores nominales conserva los umbrales
+del benchmark; los sanitizadores explícitos del catálogo aún requieren revisión.
+La distribución pública sigue en 0.1.0; no confundir los gates
+verdes con autorización para publicar ni con detección suficiente en clientes.
+
 **No autorizar todavía un lanzamiento general ni un SaaS multiempresa.**
 Esta propuesta refuerza un producto local alpha y deja una base verificable
 para revisión. No se ha publicado en PyPI, desplegado un servicio ni realizado
