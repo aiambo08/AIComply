@@ -96,6 +96,7 @@ Se ejecutó `scripts/check_quality.py` en Linux con CPython 3.11.13 y 3.13.7:
 | Escenarios de `smoke_distribution.py` en ambas instalaciones | Correctos |
 | Hashes del wheel/sdist **publicados 0.1.0** | Coinciden con la metadata pública de PyPI |
 | Publicación real de **2.0.0a0** | Pendiente; ningún tag de publicación creado |
+| Ejecución manual de `publish.yml` desde esta sesión | No autorizada por la integración GitHub (HTTP 403); requiere un mantenedor con permiso de Actions |
 | Navegador/Windows/macOS/Python distintos de 3.11 y 3.13 | No probados en esta revisión |
 
 El smoke instalado comprueba ambos entry points, versión, procedencia de imports,
