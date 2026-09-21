@@ -27,6 +27,22 @@ SDK_CALLS = [
     ("from google import genai\nclient = genai.Client()", "await client.aio.models.generate_content()", True),
 ]
 
+VALIDATOR_SETUP = (
+    "import logging\nimport os\nimport subprocess\nimport openai\nimport guardrails\n"
+    "from pydantic import BaseModel\n"
+    "from client_controls import pydantic, is_safe_command, human_gate\n"
+    "class ToolSchema(BaseModel):\n"
+    "    command: str\n"
+)
+
+NOMINAL_VALIDATORS = [
+    ("ToolSchema.model_validate({'command': raw})", "parsed.command"),
+    ("ToolSchema.model_validate_json(raw)", "parsed.command"),
+    ("pydantic(raw)", "parsed"),
+    ("is_safe_command(command=raw)", "parsed"),
+    ("human_gate(raw)", "parsed"),
+]
+
 
 @pytest.fixture
 def engine() -> ScanEngine:
@@ -101,3 +117,106 @@ def test_unrelated_clients_are_not_assumed_to_be_ai(
         f.rule_id in {"EUAIA-ART14-002", "EUAIA-ART50-003", "EUAIA-ART12-001"}
         for f in engine.scan_path(source).findings
     )
+
+
+@pytest.mark.parametrize("validator,value", NOMINAL_VALIDATORS)
+@pytest.mark.parametrize(
+    "sink",
+    [
+        "os.system({value})",
+        "subprocess.run(args={value}, shell=True)",
+        "subprocess.Popen({value}, shell=True)",
+        "subprocess.check_output({value}, shell=True)",
+        "subprocess.call({value}, shell=True)",
+        "eval({value})",
+        "exec({value})",
+    ],
+)
+def test_nominal_validators_preserve_execution_taint(
+    tmp_path: Path, engine: ScanEngine, validator: str, value: str, sink: str,
+) -> None:
+    source = tmp_path / "validated.py"
+    command = sink.format(value=value)
+    source.write_text(
+        VALIDATOR_SETUP
+        + "def handle():\n"
+        + indent(
+            "raw = openai.responses.create().output_text\n"
+            f"parsed = {validator}\n{command}\n",
+            "    ",
+        ),
+        encoding="utf-8",
+    )
+    report = engine.scan_path(source)
+    flows = [f for f in report.findings if f.rule_id == "EUAIA-ART14-002"]
+    assert len(flows) == 1
+    assert report.legal_assessment == "not_assessed"
+    assert [step.step_type for step in flows[0].flow_steps] == [
+        "source", "propagation", "sink",
+    ]
+    assert validator in flows[0].flow_steps[1].code_snippet
+    assert command in flows[0].flow_steps[-1].code_snippet
+    sarif = json.loads(generate_sarif_report(report))
+    result = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "EUAIA-ART14-002")
+    assert len(result["codeFlows"][0]["threadFlows"][0]["locations"]) == 3
+
+
+@pytest.mark.parametrize("validator,value", NOMINAL_VALIDATORS)
+@pytest.mark.parametrize(
+    "action",
+    [
+        "if {value} == 'status':\n    subprocess.run(['service', 'status'], shell=False)\n",
+        "command = {value}\ncommand = 'printf status'\nos.system(command)\n",
+    ],
+)
+def test_nominal_validators_do_not_taint_constant_actions(
+    tmp_path: Path, engine: ScanEngine, validator: str, value: str, action: str,
+) -> None:
+    source = tmp_path / "bounded.py"
+    source.write_text(
+        VALIDATOR_SETUP
+        + "def handle():\n"
+        + indent(
+            "raw = openai.responses.create().output_text\n"
+            f"parsed = {validator}\n" + action.format(value=value),
+            "    ",
+        ),
+        encoding="utf-8",
+    )
+    report = engine.scan_path(source)
+    assert report.findings == []
+    assert report.legal_assessment == "not_assessed"
+
+
+@pytest.mark.parametrize(
+    "validation",
+    [
+        "if approved:\n"
+        "    command = human_gate(raw)\n"
+        "else:\n"
+        "    command = is_safe_command(raw)\n",
+        "if approved:\n"
+        "    command = guardrails.validate(raw)\n"
+        "else:\n"
+        "    command = human_gate(raw)\n",
+        "command = human_gate(ToolSchema.model_validate_json(raw).command)\n",
+    ],
+)
+def test_nominal_validator_branches_and_chains_remain_unsafe(
+    tmp_path: Path, engine: ScanEngine, validation: str,
+) -> None:
+    source = tmp_path / "branches.py"
+    source.write_text(
+        VALIDATOR_SETUP
+        + "def handle(approved):\n"
+        + indent(
+            "raw = openai.responses.create().output_text\n"
+            + validation + "os.system(command)\n",
+            "    ",
+        ),
+        encoding="utf-8",
+    )
+    flows = [f for f in engine.scan_path(source).findings if f.rule_id == "EUAIA-ART14-002"]
+    assert len(flows) == 1
+    assert flows[0].flow_steps[0].step_type == "source"
+    assert flows[0].flow_steps[-1].step_type == "sink"

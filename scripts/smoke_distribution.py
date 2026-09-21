@@ -102,6 +102,30 @@ def check_scenarios(directory: Path) -> None:
     assert report["findings"] == []
     assert report["legal_assessment"] == "not_assessed"
 
+    for validator, value in (
+        ("ToolSchema.model_validate({'command': raw})", "parsed.command"),
+        ("ToolSchema.model_validate_json(raw)", "parsed.command"),
+        ("pydantic(raw)", "parsed"),
+        ("is_safe_command(command=raw)", "parsed"),
+        ("human_gate(raw)", "parsed"),
+    ):
+        source.write_text(
+            "import logging\nimport os\nfrom openai import OpenAI\n"
+            "from pydantic import BaseModel\n"
+            "from client_controls import pydantic, is_safe_command, human_gate\n"
+            "class ToolSchema(BaseModel):\n"
+            "    command: str\n"
+            "client = OpenAI()\nraw = client.responses.create().output_text\n"
+            f"parsed = {validator}\nos.system({value})\n",
+            encoding="utf-8",
+        )
+        report = json.loads(cli(directory, "scan", str(client), "--format", "json", expected=1))
+        flow, = [f for f in report["findings"] if f["rule_id"] == "EUAIA-ART14-002"]
+        assert [step["step_type"] for step in flow["flow_steps"]] == [
+            "source", "propagation", "sink",
+        ]
+        assert report["legal_assessment"] == "not_assessed"
+
     source.write_text(
         "prompt = 'DNI ficticio 12345678Z'\n"
         "import requests\nrequests.post('https://example.invalid', verify=False)\n",

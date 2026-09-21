@@ -1,14 +1,16 @@
 # Validación de AIComply para un piloto y publicación PyPI
 
-Revisión: 20 de septiembre de 2026. Repositorio: `aiambo08/AIComply`.
+Revisión: 20 de septiembre de 2026; validadores y gates actualizados el
+21 de septiembre de 2026. Repositorio: `aiambo08/AIComply`.
 
 ## Veredicto
 
 AIComply permite localizar ciertos usos peligrosos de IA y producir evidencia
 revisable dentro del repositorio del cliente. La CLI puede servir para un
 piloto supervisado; todavía no debe ser un control único de seguridad ni una
-certificación de cumplimiento. No recomendar la publicación nueva hasta
-resolver el falso negativo de validadores descrito abajo.
+certificación de cumplimiento. La corrección autorizada de los cinco validadores
+nominales pasa los gates completos. La publicación nueva sigue pendiente de
+aprobación y de la ejecución real de Trusted Publishing.
 
 El repositorio y PyPI difieren: PyPI sirve **0.1.0**, cuya instalación, ayuda,
 dependencias y hashes de wheel/sdist se comprobaron en un entorno nuevo.
@@ -54,31 +56,42 @@ No se importaron SDK ni ejecutaron llamadas a proveedores: son pruebas del
 análisis estático de esos patrones. No cubren streaming, wrappers arbitrarios,
 resolución entre funciones ni comportamiento runtime.
 
-## Defecto pendiente: nombres de validadores tratados como garantías
+## Defecto corregido: cinco nombres de validadores tratados como garantías
 
-La regla `art14_tool_call_taint.yaml` acepta, entre otros, `model_validate`,
+La regla `art14_tool_call_taint.yaml` aceptaba `model_validate`,
 `model_validate_json`, `pydantic`, `is_safe_command` y `human_gate` como
-sanitizadores por nombre. Se reprodujo un resultado de **cero findings Art. 14**
+sanitizadores por nombre. Se había reproducido **cero findings Art. 14**
 cuando la salida de `openai.responses.create()` atraviesa
 `ToolSchema.model_validate`, `ToolSchema.model_validate_json` o `human_gate`
 y después llega a `os.system`.
 
 Un esquema con `command: str` no limita los comandos aceptables. Tampoco el
-nombre de una función prueba aprobación humana efectiva. El benchmark
-`TN-02` espera actualmente que ese esquema elimine la señal; por eso el
-benchmark puede pasar aunque exista este falso negativo.
+nombre de una función prueba aprobación humana efectiva. Con autorización del
+responsable, se retiraron esos cinco nombres del catálogo de sanitizadores de
+ejecución y se convirtió `TN-02` en el positivo `TP-17`, conservando el flujo
+original. No se modificó el motor: las llamadas ordinarias ya propagan taint
+desde sus argumentos; ahora esos nombres dejan de borrarlo.
 
-Corrección propuesta para aprobación del responsable:
+Las 48 regresiones nuevas comprueban 35 combinaciones de los cinco validadores
+con los siete destinos de ejecución, tres flujos con ramas/cadenas y diez
+contrapartes con acciones constantes o reasignación limpia. Se verifican trazas
+origen→propagación→destino y su exportación SARIF. **Antes de corregir la regla
+fallaban los 38 casos peligrosos; ahora pasan los 48.** El smoke instalado
+también exige un finding Art. 14 y su traza para los cinco validadores.
 
-1. Quitar esos nombres genéricos del conjunto de sanitizadores de ejecución.
-2. Mantener taint a través de validaciones de tipo y funciones nominales.
-3. Cambiar `TN-02` a un caso positivo y añadir regresiones de esos flujos.
-4. Mantener los negativos de acciones constantes/permitidas y el umbral 0,95.
-5. Repetir ambos gates completos antes de crear un tag de publicación.
+El benchmark actualizado fallaba antes de la corrección: 16/17 positivos,
+14/14 negativos, recall 94,12%. Después detecta 17/17 positivos y conserva
+14/14 negativos (precisión, recall y F1 del 100% en este corpus sintético).
+Los tres umbrales siguen en **0,95**; no se añadieron exclusiones ni xfails.
+Este resultado no estima la exactitud sobre código real de clientes.
 
-No se modificó esa expectativa existente sin autorización. Las 577 pruebas
-correctas no resuelven este problema; no se ocultó con una exclusión o un
-umbral menos exigente.
+**Límite de la corrección:** `guardrails.validate` continúa como sanitizador
+explícito del catálogo. El motor reconoce su nombre, pero no comprueba su
+implementación ni los validadores configurados; podría ocultar un flujo inseguro
+si esa política no corresponde a un control efectivo. Las reglas personalizadas
+también pueden declarar sanitizadores. Revisar esas políticas es obligatorio
+en el piloto; esta corrección no demuestra seguridad de todos los validadores
+ni implementa análisis entre funciones o verificación runtime.
 
 ## Resultados de distribución
 
@@ -87,7 +100,7 @@ Se ejecutó `scripts/check_quality.py` en Linux con CPython 3.11.13 y 3.13.7:
 | Gate | Resultado |
 |---|---|
 | Lockfile, Ruff y mypy configurado | Correctos; mypy estricto cubre el clasificador, no todo el repositorio |
-| Suite completa por intérprete | **577 correctas** |
+| Suite completa por intérprete | **625 correctas** |
 | Wheel y sdist mediante el backend declarado | Correctos; wheel construido desde sdist |
 | `twine check --strict` sobre ambos | Correcto; metadata, descripción y licencia aceptadas |
 | Comparación de recursos YAML/UI | Correcta |
@@ -102,7 +115,16 @@ Se ejecutó `scripts/check_quality.py` en Linux con CPython 3.11.13 y 3.13.7:
 El smoke instalado comprueba ambos entry points, versión, procedencia de imports,
 assets locales, código cliente no ejecutado, escaneo limpio/peligroso/acotado,
 JSON/Markdown/SARIF, manifest, Anexo IV, firma válida y manipulada, datos personales,
-TLS, configuración/sintaxis inválidas y contexto de decisiones automatizadas.
+TLS, configuración/sintaxis inválidas, los cinco validadores nominales y contexto
+de decisiones automatizadas.
+
+La primera ejecución local simultánea de ambas suites ocupó el mismo puerto
+8991 del fixture de consola: seis errores de arranque en 3.11. Se repitió el
+gate 3.11 después de finalizar 3.13, sin modificar ni omitir pruebas, y pasó
+completo. Ejecutar las matrices en máquinas separadas, como en CI, o en serie
+si comparten máquina. Mypy adicional de los tres scripts de release también
+pasa con `MYPYPATH=src uv run --frozen mypy --follow-imports=silent
+scripts/check_quality.py scripts/smoke_distribution.py scripts/verify_pypi.py`.
 
 La suite existente añade contratos de aliases/merges/duplicados YAML,
 symlinks/hardlinks/archivos especiales, límites, sintaxis/codificación, supresiones,
@@ -111,8 +133,9 @@ auditoría formal o pruebas exhaustivas de carga.
 
 ## Procedimiento de publicación
 
-Primero cerrar el defecto pendiente, aprobar la PR y revisar los gates del commit
-que se vaya a publicar. El autoescaneo del repositorio tiene hallazgos y su
+Primero aprobar la PR y revisar los gates del commit que se vaya a publicar,
+incluidos los límites de sanitizadores descritos arriba. El autoescaneo del
+repositorio tiene hallazgos y su
 política de tratamiento requiere una decisión independiente; no se han silenciado.
 
 1. Mantener el Trusted Publisher del proyecto `aicomply-cli` con el repositorio
@@ -155,8 +178,8 @@ Referencias: [Trusted Publishing](https://docs.pypi.org/trusted-publishers/),
 
 ## Condiciones que siguen pendientes
 
-Además del falso negativo, faltan validación jurídica del contexto, corpus
-representativo de clientes, umbrales operativos medidos y pruebas de carga
+Además de la revisión de sanitizadores declarados, faltan validación jurídica del
+contexto, corpus representativo de clientes, umbrales operativos medidos y pruebas de carga
 exhaustivas. La consola sigue siendo local y carece de autenticación, RBAC,
 aislamiento multiempresa y retención administrada. La propuesta es un piloto
 local/CI supervisado, no un SaaS público listo para producción.

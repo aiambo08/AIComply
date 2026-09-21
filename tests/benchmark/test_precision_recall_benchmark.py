@@ -206,6 +206,23 @@ def human_reviewed():
         expected_rule_id="EUAIA-ART14-002",
         description="Una compuerta nominal no valida el comando procedente del LLM",
     ),
+    BenchmarkCase(
+        case_id="TP-17",
+        file_name="unconstrained_pydantic.py",
+        content="""import openai, os, logging
+from pydantic import BaseModel
+class ToolSchema(BaseModel):
+    command: str
+def execute():
+    logging.info("Ejecutando inferencia registrada")
+    res = openai.chat.completions.create(model='gpt-4o', messages=[])
+    model = ToolSchema.model_validate(res.choices[0].message.content)
+    os.system(model.command)
+""",
+        expected_finding=True,
+        expected_rule_id="EUAIA-ART14-002",
+        description="Un campo Pydantic command: str no restringe los comandos del LLM (antes TN-02)",
+    ),
 ]
 
 
@@ -224,22 +241,6 @@ def clean_run():
 """,
         expected_finding=False,
         description="Salida sanitizada con guardrails.validate y logging auditado",
-    ),
-    BenchmarkCase(
-        case_id="TN-02",
-        file_name="clean_pydantic.py",
-        content="""import openai, os, logging
-from pydantic import BaseModel
-class ToolSchema(BaseModel):
-    command: str
-def safe_exec():
-    logging.info("Ejecutando inferencia registrada")
-    res = openai.chat.completions.create(model='gpt-4o', messages=[])
-    model = ToolSchema.model_validate(res.choices[0].message.content)
-    os.system(model.command)
-""",
-        expected_finding=False,
-        description="Salida validada mediante esquema estricto Pydantic y con logging",
     ),
     BenchmarkCase(
         case_id="TN-04",

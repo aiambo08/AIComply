@@ -4,8 +4,8 @@ title: "Ejecución autónoma de comandos del sistema con salida de IA no validad
 severity: CRITICAL
 risk_tier: high_risk
 confidence: HIGH
-description: "Se detectó que el contenido devuelto por un LLM se propaga directamente a funciones de ejecución de comandos del sistema (os.system, subprocess) sin pasar por filtros de validación de esquemas ni compuertas de supervisión humana."
-remediation: "Implemente una compuerta de supervisión humana (Human-in-the-Loop) o valide la salida del LLM contra un esquema estructurado estricto (Pydantic / lista blanca de comandos) antes de su invocación."
+description: "Se detectó un flujo de contenido de un LLM hacia funciones de ejecución (os.system, subprocess, eval, exec). Validar tipos o invocar una función con nombre de control no demuestra que los comandos estén restringidos."
+remediation: "Use un conjunto cerrado de acciones con ejecutables y argumentos constantes, rechace acciones desconocidas y revise la autorización efectiva antes de ejecutar. Un campo command: str en Pydantic o una función llamada human_gate no demuestra seguridad; los controles reales requieren revisión contextual."
 max_fine: "35M€ o 7%"
 patterns:
   - type: data_flow
@@ -27,11 +27,6 @@ patterns:
         - target: "model.generate"
       sanitizers:
         - target: "guardrails.validate"
-        - target: "model_validate"
-        - target: "model_validate_json"
-        - target: "pydantic"
-        - target: "is_safe_command"
-        - target: "human_gate"
       sinks:
         - target: "os.system"
         - target: "subprocess.run"
