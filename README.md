@@ -6,6 +6,14 @@ SARIF 2.1.0 y evidencia firmada con Ed25519.
 
 **Estado: alpha en revisión.** No es una certificación, una opinión jurídica
 ni una garantía de evitar multas. Sin hallazgos no significa conformidad.
+
+**Distribución:** la versión pública comprobada el 20 de septiembre de 2026 es
+`aicomply-cli==0.1.0`; no incluye todas las mejoras de esta rama. La siguiente
+prepublicación preparada es `2.0.0a0` y todavía no se ha publicado.
+Consulta la [validación de producto y PyPI](docs/PYPI_VALIDATION.md), incluido
+el falso negativo pendiente de validadores nominales, antes de adoptar el
+analizador como gate de seguridad. Las versiones alpha requieren selección
+explícita en pip; una instalación sin versión puede conservar la versión estable anterior.
 Antes de desplegar, consultar [condiciones de lanzamiento](docs/PRODUCTION_READINESS.md).
 Los cambios de esta rama no equivalen a una versión publicada en PyPI.
 

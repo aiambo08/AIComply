@@ -12,7 +12,17 @@ patterns:
     data_flow:
       sources:
         - target: "openai.chat.completions.create"
+        - target: "openai.responses.create"
+        - target: "openai.AsyncOpenAI.chat.completions.create"
+        - target: "openai.AsyncOpenAI.responses.create"
+        - target: "openai.AzureOpenAI.chat.completions.create"
+        - target: "openai.AzureOpenAI.responses.create"
+        - target: "openai.AsyncAzureOpenAI.chat.completions.create"
+        - target: "openai.AsyncAzureOpenAI.responses.create"
         - target: "anthropic.messages.create"
+        - target: "anthropic.AsyncAnthropic.messages.create"
+        - target: "google.genai.Client.models.generate_content"
+        - target: "google.genai.Client.aio.models.generate_content"
         - target: "litellm.completion"
         - target: "model.generate"
       sanitizers:

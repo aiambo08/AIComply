@@ -2,7 +2,6 @@
 
 import argparse
 import hashlib
-import json
 import os
 from pathlib import Path
 import shutil
@@ -10,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 import zipfile
 
 
@@ -44,43 +44,24 @@ def verify_archives(root: Path, wheel: Path, sdist: Path) -> None:
                 raise ValueError(f"Missing or altered wheel resource: {wheel_name}")
 
 
-def verify_install(wheel: Path, directory: Path) -> None:
+def verify_install(artifact: Path, directory: Path, *, locked: bool = True) -> None:
+    directory.mkdir()
     dependencies = directory / "requirements.txt"
     environment = directory / "installed"
-    run("uv", "export", "--locked", "--no-dev", "--no-emit-project",
-        "--format", "requirements-txt", "--output-file", str(dependencies))
-    run("uv", "venv", "--python", sys.executable, str(environment))
+    run("uv", "venv", "--seed", "--python", sys.executable, str(environment))
     python = str(environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
-    run("uv", "pip", "install", "--python", python, "--require-hashes", "-r", str(dependencies))
-    run("uv", "pip", "install", "--python", python, "--no-deps", str(wheel))
-    run("uv", "pip", "check", "--python", python)
-    run(python, "-I", "-c", """
-from importlib.metadata import distribution
-from importlib.resources import files
-from pathlib import Path
-import sys
-import aicomply
-from aicomply.rules.loader import load_builtin_rules
-assert Path(aicomply.__file__).resolve().is_relative_to(Path(sys.prefix))
-assert load_builtin_rules().rules
-assert files("aicomply").joinpath("ui/static/app.html").read_text(encoding="utf-8")
-entry_points = {entry.name for entry in distribution("aicomply-cli").entry_points}
-assert {"aicomply", "aicomply-cli"} <= entry_points
-""", cwd=directory)
-    for entry in ("aicomply", "aicomply-cli"):
-        executable = environment / ("Scripts" if os.name == "nt" else "bin") / (
-            f"{entry}.exe" if os.name == "nt" else entry
-        )
-        run(str(executable), "--help", cwd=directory)
-    fixture = directory / "fixture"
-    fixture.mkdir()
-    (fixture / "clean.py").write_text("answer = 42\n", encoding="utf-8")
-    report = directory / "smoke.sarif"
-    run(python, "-I", "-m", "aicomply.cli", "scan", "--format", "sarif",
-        "--output", str(report), "--", str(fixture), cwd=directory)
-    payload = json.loads(report.read_text(encoding="utf-8"))
-    if payload["version"] != "2.1.0" or payload["runs"][0]["results"]:
-        raise ValueError("Installed artifact smoke scan failed")
+    if locked:
+        run("uv", "export", "--locked", "--no-dev", "--no-emit-project",
+            "--format", "requirements-txt", "--output-file", str(dependencies))
+        run("uv", "pip", "install", "--python", python, "--require-hashes", "-r", str(dependencies))
+        run(python, "-I", "-m", "pip", "install", "--no-deps", str(artifact), cwd=directory)
+    else:
+        run(python, "-I", "-m", "pip", "install", "--no-cache-dir",
+            "--index-url", "https://pypi.org/simple", str(artifact), cwd=directory)
+    run(python, "-I", "-m", "pip", "check", cwd=directory)
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    run(python, "-I", str(ROOT / "scripts" / "smoke_distribution.py"),
+        "--expected-version", version, cwd=directory)
 
 
 def main() -> None:
@@ -97,8 +78,10 @@ def main() -> None:
         run(sys.executable, "-m", "build", "--no-isolation", "--outdir", str(artifacts))
         wheel, = artifacts.glob("*.whl")
         sdist, = artifacts.glob("*.tar.gz")
+        run(sys.executable, "-m", "twine", "check", "--strict", str(wheel), str(sdist))
         verify_archives(ROOT, wheel, sdist)
-        verify_install(wheel, directory)
+        verify_install(wheel, directory / "locked-wheel")
+        verify_install(sdist, directory / "resolved-sdist", locked=False)
         args.dist_dir.mkdir(parents=True, exist_ok=True)
         for artifact in (wheel, sdist):
             destination = args.dist_dir / artifact.name

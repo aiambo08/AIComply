@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: pypi-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   quality:
     uses: ./.github/workflows/quality.yml
@@ -16,7 +20,7 @@ jobs:
   publish:
     name: Publish verified distributions
     needs: quality
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -31,3 +35,34 @@ jobs:
           path: dist/
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  verify-pypi:
+    name: Verify installation from PyPI
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+      - name: Compare published files with verified artifacts
+        run: python scripts/verify_pypi.py --dist-dir dist
+      - name: Install exact release and exercise client scenarios
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python -m venv "$RUNNER_TEMP/pypi-install"
+          "$RUNNER_TEMP/pypi-install/bin/python" -I -m pip install --no-cache-dir \
+            --index-url https://pypi.org/simple "aicomply-cli==${RELEASE_TAG#v}"
+          "$RUNNER_TEMP/pypi-install/bin/python" -I -m pip check
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/pypi-install/bin/python" -I "$GITHUB_WORKSPACE/scripts/smoke_distribution.py" \
+            --expected-version "${RELEASE_TAG#v}"
