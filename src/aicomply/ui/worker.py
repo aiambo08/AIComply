@@ -10,6 +10,9 @@ import stat
 import sys
 from pathlib import Path
 
+import yaml
+
+from aicomply.config import error_summary
 from aicomply.generator.annex_iv import AnnexIVGenerator
 from aicomply.reporter.sarif_reporter import generate_sarif_report
 from aicomply.rules.loader import load_builtin_rules
@@ -129,7 +132,11 @@ def main() -> None:
         snapshot = copier.copy(
             request["root_fd"], request["relative_parts"], target.name, Path(request["snapshot_dir"]),
         )
-        report = ScanEngine(catalog=load_builtin_rules()).scan_path(snapshot)
+        try:
+            report = ScanEngine(catalog=load_builtin_rules()).scan_path(snapshot)
+        except (ValueError, SyntaxError, yaml.YAMLError, RecursionError) as error:
+            cause = error_summary(error, 400).replace(str(snapshot), str(target))
+            raise SnapshotError(f"Analysis incomplete: {cause}") from error
         config = {
             **report.effective_config,
             "console_limits": {

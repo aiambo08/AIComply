@@ -181,12 +181,121 @@ def test_compose_without_aliases_remains_supported(tmp_path: Path, catalog: Rule
 @pytest.mark.parametrize("content", [
     b"services:\n  app: &app\n    image: test\n    user: nonroot\n  other: *app\n",
     b"services:\n  app: &app\n    image: test\n  other:\n    <<: *app\n    image: override\n",
+    b"x-defaults: &defaults\n  restart: unless-stopped\nservices:\n  api:\n    <<: *defaults\n    image: test\n",
 ])
-def test_compose_aliases_are_rejected_explicitly(tmp_path: Path, catalog: RuleCatalog, content: bytes):
+def test_compose_aliases_are_analyzed(tmp_path: Path, catalog: RuleCatalog, content: bytes):
+    (tmp_path / "compose.yml").write_bytes(content)
+    report = ScanEngine(catalog).scan_path(tmp_path)
+    assert report.summary.total_files_scanned == 1
+    assert report.findings == []
+
+
+def test_compose_aliases_do_not_hide_privileged_or_root_services(tmp_path: Path, catalog: RuleCatalog):
+    (tmp_path / "compose.yml").write_bytes(
+        b"x-insecure: &insecure\n  privileged: true\n  user: '0:0'\n"
+        b"services:\n  worker:\n    <<: *insecure\n    image: test\n  clone: &svc\n    image: test\n"
+        b"    privileged: true\n  twin: *svc\n"
+    )
+    report = ScanEngine(catalog).scan_path(tmp_path)
+    targets = {finding.location.file_path + ":" + finding.message for finding in report.findings}
+    assert any("worker" in target for target in targets)
+    assert any("clone" in target for target in targets)
+    assert any("twin" in target for target in targets)
+    assert all(finding.rule_id == "EUAIA-ART15-006" for finding in report.findings)
+
+
+@pytest.mark.parametrize("content", [
+    b"services: " + b"[" * 70 + b"]" * 70 + b"\n",
+    b"services:\n  app: &a\n    image: test\n" + b"".join(f"  s{i}: *a\n".encode() for i in range(300)),
+])
+def test_compose_alias_budget_is_enforced(tmp_path: Path, catalog: RuleCatalog, content: bytes):
     (tmp_path / "compose.yml").write_bytes(content)
     with pytest.raises(ValueError, match="Unable to fully parse") as error:
         ScanEngine(catalog).scan_path(tmp_path)
-    assert "YAML aliases are not supported" in str(error.value.__cause__)
+    assert "complexity budget" in str(error.value)
+
+
+def test_compose_python_tags_are_rejected(tmp_path: Path, catalog: RuleCatalog):
+    (tmp_path / "compose.yml").write_bytes(b"services: !!python/object/apply:os.system ['id']\n")
+    with pytest.raises(ValueError, match="Unable to fully parse"):
+        ScanEngine(catalog).scan_path(tmp_path)
+
+
+def test_requirements_pip_options_and_vcs_references(tmp_path: Path, catalog: RuleCatalog):
+    (tmp_path / "requirements.txt").write_text("requests==2.32.0\n")
+    (tmp_path / "libs").mkdir()
+    (tmp_path / "libs" / "medkit").mkdir()
+    (tmp_path / "requirements-ml.txt").write_text(
+        "-r requirements.txt\n"
+        "--extra-index-url https://download.pytorch.org/whl/cu121\n"
+        "--index-url=https://pypi.org/simple\n"
+        "--pre\n"
+        "torch==2.4.1+cu121  # pinned\n"
+        "git+https://github.com/serengil/deepface.git@v0.0.93#egg=deepface\n"
+        "-e git+https://github.com/example/face_recognition.git#egg=face_recognition\n"
+        "-e ./libs/medkit\n"
+        "numpy==1.26.4 --hash=sha256:" + "a" * 64 + " \\\n"
+    )
+    report = ScanEngine(catalog).scan_path(tmp_path)
+    assert report.summary.total_files_scanned == 2
+    prohibited = {
+        finding.code_snippet for finding in report.findings
+        if finding.location.file_path == "requirements-ml.txt" and finding.rule_id == "EUAIA-ART05-003"
+    }
+    assert any("#egg=deepface" in snippet for snippet in prohibited)
+    assert any("-e git+" in snippet and "face_recognition" in snippet for snippet in prohibited)
+
+
+@pytest.mark.parametrize("line", [
+    "-r ../outside.txt", "-r /etc/passwd", "-r missing.txt", "-e ../escape", "--unknown-option x",
+    "--index-url", "--pre now", "numpy --hash=md5:abc",
+])
+def test_unsafe_requirements_lines_still_fail(tmp_path: Path, catalog: RuleCatalog, line: str):
+    (tmp_path / "requirements.txt").write_text(line + "\n")
+    with pytest.raises(ValueError, match="Unable to fully parse"):
+        ScanEngine(catalog).scan_path(tmp_path)
+
+
+def test_pep263_encoding_declaration_is_honoured(tmp_path: Path, catalog: RuleCatalog):
+    source = "# -*- coding: latin-1 -*-\n# Año\nai_disclaimer = False\n".encode("latin-1")
+    (tmp_path / "legacy.py").write_bytes(source)
+    report = ScanEngine(catalog).scan_path(tmp_path)
+    assert report.source_manifest[0].sha256 == hashlib.sha256(source).hexdigest()
+    assert any(f.rule_id == "EUAIA-ART13-001" and f.location.start_line == 3 for f in report.findings)
+
+
+def test_undeclared_non_utf8_python_reports_cause(tmp_path: Path, catalog: RuleCatalog):
+    (tmp_path / "legacy.py").write_bytes("# Año\nx = 1\n".encode("latin-1"))
+    with pytest.raises(ValueError, match=r"Unable to fully parse scan input: .*legacy\.py \(invalid or missing encoding"):
+        ScanEngine(catalog).scan_path(tmp_path)
+
+
+@pytest.mark.parametrize("dockerfile,expect_root_finding", [
+    ("FROM python:3.12\nARG APP_USER=app\nUSER ${APP_USER}\n", False),
+    ("FROM python:3.12\nENV APP_UID=1001\nUSER $APP_UID:$APP_UID\n", False),
+    ("FROM python:3.12\nUSER ${APP_USER:-svc}\n", False),
+    ("FROM python:3.12\nARG APP_USER=root\nUSER ${APP_USER}\n", True),
+    ("FROM python:3.12\nUSER ${APP_USER}\n", True),
+    ("FROM python:3.12\nUSER ${APP_USER:-0}\n", True),
+    ("FROM python:3.12\nARG APP_USER=app\nUSER $OTHER\n", True),
+])
+def test_dockerfile_user_build_args_are_resolved(
+    tmp_path: Path, catalog: RuleCatalog, dockerfile: str, expect_root_finding: bool,
+):
+    (tmp_path / "Dockerfile").write_text(dockerfile)
+    report = ScanEngine(catalog).scan_path(tmp_path)
+    assert any(f.rule_id == "EUAIA-ART15-004" for f in report.findings) is expect_root_finding
+
+
+def test_rule_and_config_errors_expose_root_cause(tmp_path: Path, catalog: RuleCatalog):
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "custom.yaml").write_text("- id: X-1\n  title: t\n")
+    with pytest.raises(RuleLoadError, match=r"custom\.yaml \(.*Field required"):
+        load_rules_from_dir(rules_dir)
+    (tmp_path / ".aicomply.yaml").write_text("enforce_risk_tier: critical\n")
+    with pytest.raises(ValueError, match=r"Invalid project configuration: .* \(enforce_risk_tier"):
+        load_project_config(tmp_path)
 
 
 @pytest.mark.parametrize("requirement", [
@@ -443,3 +552,41 @@ def test_cli_returns_two_for_incomplete_scan(tmp_path: Path, filename: str, cont
     (tmp_path / filename).write_text(content)
     result = CliRunner().invoke(app, ["scan", str(tmp_path), "--format", "json"])
     assert result.exit_code == 2
+
+
+def test_calling_an_instance_does_not_repeat_its_constructor_match(tmp_path: Path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "batch.py").write_text(
+        "from transformers import AutoTokenizer, pipeline\n"
+        "tokenizer = AutoTokenizer.from_pretrained('x')\n"
+        "tok = tokenizer\n"
+        "pipe = pipeline('text-generation')\n"
+        "ids = tokenizer('hola')\n"
+        "ids2 = tok('hola')\n"
+        "out = pipe('hola')\n",
+        encoding="utf-8",
+    )
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "hf.yaml").write_text(
+        yaml.safe_dump(
+            [
+                {
+                    "id": "EUAIA-ART11-901",
+                    "title": "Modelo HF cargado",
+                    "description": "from_pretrained sin model card.",
+                    "article": "Art. 11",
+                    "severity": "LOW",
+                    "risk_tier": "minimal_risk",
+                    "confidence": "LOW",
+                    "max_fine": "n/a",
+                    "remediation": "Adjuntar model card.",
+                    "patterns": [{"type": "ast_call", "target": "from_pretrained"}],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    report = ScanEngine(load_rules_from_dir(rules_dir)).scan_path(project)
+    assert sorted(f.location.start_line for f in report.findings) == [2]

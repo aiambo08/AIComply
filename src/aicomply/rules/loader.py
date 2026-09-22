@@ -9,7 +9,9 @@ import stat
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 import yaml
-from aicomply.config import MAX_POLICY_BYTES, checked_path, load_policy_yaml, read_regular_file
+from aicomply.config import (
+    MAX_POLICY_BYTES, checked_path, error_summary, load_policy_yaml, read_regular_file,
+)
 from aicomply.schemas import PatternType, Rule
 
 
@@ -87,6 +89,7 @@ def load_rules_from_dir(rules_dir: Path) -> RuleCatalog:
     yaml_files: List[Path] = []
     entries = 0
     total_bytes = 0
+    current_file: Path | None = None
 
     def walk_error(error: OSError) -> None:
         raise error
@@ -109,6 +112,7 @@ def load_rules_from_dir(rules_dir: Path) -> RuleCatalog:
                     if len(yaml_files) > 1000:
                         raise RuleLoadError("Too many rule files")
         for yaml_file in sorted(yaml_files):
+            current_file = yaml_file
             data = read_regular_file(yaml_file, MAX_POLICY_BYTES)
             total_bytes += len(data)
             if total_bytes > 10 * MAX_POLICY_BYTES:
@@ -126,7 +130,10 @@ def load_rules_from_dir(rules_dir: Path) -> RuleCatalog:
             raise RuleLoadError(f"No rules found: {rules_dir}")
         return RuleCatalog(loaded_rules)
     except (OSError, ValueError, yaml.YAMLError, RecursionError) as exc:
-        raise RuleLoadError(f"Unable to load valid rules from: {rules_dir}") from exc
+        origin = current_file if current_file is not None else rules_dir
+        raise RuleLoadError(
+            f"Unable to load valid rules from: {origin} ({error_summary(exc)})"
+        ) from exc
 
 
 def load_builtin_rules() -> RuleCatalog:

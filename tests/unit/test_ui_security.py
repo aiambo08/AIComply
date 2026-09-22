@@ -315,3 +315,23 @@ def test_static_assets_are_offline_and_restrict_injection(console: Console) -> N
     assert status == 200
     assert b"@import" not in css and b"url(" not in css
     assert console.request("/static/../../schemas.py", method="GET")[0] == 404
+
+
+@pytest.mark.parametrize(
+    "filename,content,cause",
+    [
+        ("legacy.py", "print 'hola'\n", "legacy.py (Missing parentheses"),
+        (".aicomply.yaml", "enforce_risk_tier: severe\n", "enforce_risk_tier: Input should be"),
+    ],
+)
+def test_incomplete_analysis_reports_bounded_root_cause(
+    console: Console, filename: str, content: str, cause: str
+) -> None:
+    (console.root / filename).write_text(content, encoding="utf-8")
+    status, _, body = console.request("/api/scan")
+    assert status == 422
+    error = json.loads(body)["error"]
+    assert error.startswith("Analysis incomplete: ")
+    assert cause in error
+    assert "aicomply-console-" not in error
+    assert str(console.root / filename) in error

@@ -28,7 +28,7 @@
       "reason": "Remediation text describing an insecure setting to remove."
     },
     "src/aicomply/scanner/ast_parser.py": {
-      "sha256": "a5cc2435e9a2c99af3350f0b62183b731af4cc795d95563ccb9d4631da4fa3e1",
+      "sha256": "3aa213a0eebfe91d9656dbc09a0d37fcbf9f4115ae26bef939bdac7f3f553bb5",
       "reason": "Assignment example in a source comment, not an executable assignment."
     }
   },
@@ -130,8 +130,8 @@
       "rule_id": "GDPR-ART32-002", "path": "src/aicomply/rules/gdpr/art32_security.yaml", "line": 24
     },
     {
-      "id": "eb534063ffecf973671ab8cfa2da41c030157f0fc5abfa68f28463f659ca9d18",
-      "rule_id": "EUAIA-ART13-001", "path": "src/aicomply/scanner/ast_parser.py", "line": 111
+      "id": "b1b849856fcc83ac84d6a8446b1925cadec913feb80ef223f9fe294d64df4735",
+      "rule_id": "EUAIA-ART13-001", "path": "src/aicomply/scanner/ast_parser.py", "line": 131
     }
   ]
 }

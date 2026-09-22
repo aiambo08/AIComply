@@ -9,11 +9,30 @@ from pathlib import Path, PureWindowsPath
 from typing import List, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from yaml.nodes import MappingNode
 from yaml.tokens import AliasToken
 
 MAX_POLICY_BYTES = 1024 * 1024
+
+
+def error_summary(exc: BaseException, limit: int = 200) -> str:
+    """One-line, bounded root cause suitable for CLI messages."""
+    if isinstance(exc, ValidationError):
+        text = "; ".join(
+            f"{'.'.join(str(part) for part in error['loc']) or '<root>'}: {error['msg']}"
+            for error in exc.errors()
+        )
+    elif isinstance(exc, SyntaxError):
+        text = f"{exc.msg} at line {exc.lineno}" if exc.lineno else str(exc.msg)
+    elif isinstance(exc, UnicodeDecodeError):
+        text = f"invalid {exc.encoding} at byte {exc.start}"
+    elif isinstance(exc, RecursionError):
+        text = "nesting too deep"
+    else:
+        text = " ".join(str(exc).split())
+    text = text or type(exc).__name__
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 def checked_path(path: Path) -> Path:
@@ -167,4 +186,6 @@ def load_project_config(target_dir: Path) -> AIComplyConfig:
         text = read_regular_file(config_path, MAX_POLICY_BYTES).decode("utf-8-sig")
         return AIComplyConfig.model_validate(load_policy_yaml(text))
     except (ValueError, yaml.YAMLError, RecursionError) as exc:
-        raise ValueError(f"Invalid project configuration: {config_path}") from exc
+        raise ValueError(
+            f"Invalid project configuration: {config_path} ({error_summary(exc)})"
+        ) from exc
