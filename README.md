@@ -66,6 +66,11 @@ uv run aicomply docgen /ruta/cliente --name "Sistema declarado" \
 | 1 | Hallazgos por encima de la tolerancia configurada; por defecto cualquier hallazgo |
 | 2 | Error de argumentos, configuración, lectura, análisis, firma o escritura |
 
+En GitHub Actions, `Execute AIComply scan` con código 1 indica hallazgos que
+bloquean la política. Revisar el SARIF en **Security → Code scanning** cuando se
+haya subido. El [diagnóstico del autoescaneo](docs/PYPI_VALIDATION.md#diagnóstico-del-autoescaneo-en-github-actions)
+documenta los casos de prueba del propio repositorio.
+
 `--enforce-risk-tier high_risk` tolera `high_risk`, `limited_risk` y
 `minimal_risk`, pero falla con `prohibited`. Son **etiquetas técnicas del
 catálogo**, no clasificación jurídica del sistema. La opción CLI tiene

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Verify both published artifacts in PyPI's release metadata and Simple index
+  before installing; retry index propagation without accepting changed hashes
+  or yanked files.
+- Explain finding-policy failures and report counts in GitHub Action logs while
+  preserving exit codes and SARIF uploads.
+
 ## [2.0.0a0] - 2026-09-21
 
 - Add modern SDK source coverage for OpenAI Responses, asynchronous/Azure OpenAI,

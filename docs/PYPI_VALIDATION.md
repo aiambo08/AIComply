@@ -1,7 +1,8 @@
 # Validación de AIComply para un piloto y publicación PyPI
 
 Revisión: 20 de septiembre de 2026; validadores, gates y publicación actualizados el
-21 de septiembre de 2026. Repositorio: `aiambo08/AIComply`.
+21 de septiembre de 2026; instalación e índice revalidados el 22.
+Repositorio: `aiambo08/AIComply`.
 
 ## Veredicto
 
@@ -45,6 +46,32 @@ El primer intento local inmediatamente posterior a la subida solo encontró
 0.1.0. Tras aparecer los nuevos archivos en el índice simple, el mismo comando
 de instalación exacta funcionó sin cambios. Este retraso de propagación no
 requirió otra subida ni cambiar la versión.
+
+## Diagnóstico del autoescaneo en GitHub Actions
+
+`Execute AIComply scan` puede guardar el informe y terminar con código 1:
+significa que los hallazgos superan la política configurada. El Action conserva
+ese código y sube el SARIF válido; los errores de ejecución o de informe usan
+código 2. La publicación tiene un workflow separado.
+
+La revisión del 22 de septiembre reproduce 25 hallazgos con análisis completado:
+
+| Origen | Hallazgos | Contexto revisado |
+|---|---:|---|
+| `examples/fintech_credit_scoring/risk_scoring_service.py` | 18 | Demostración deliberadamente insegura |
+| `scripts/smoke_distribution.py` | 2 | Código sintético que el smoke escribe para comprobar detecciones |
+| `src/aicomply/rules/eu_ai_act/art10_data_gov.yaml`, `art11_tech_doc.yaml`, `art9_risk_mgmt.yaml` y `src/aicomply/rules/gdpr/art32_security.yaml` | 4 | Patrones y texto de remediación del catálogo |
+| `src/aicomply/scanner/ast_parser.py` | 1 | Ejemplo de asignación dentro de un comentario |
+
+El mismo fallo existía en el commit publicado de `main`; no se ha cambiado el
+umbral ni excluido esos archivos. El tratamiento de excepciones del autoescaneo
+requiere aprobación explícita. No aceptar nuevos hallazgos automáticamente.
+
+La comprobación de PyPI ahora espera también ambos archivos en el índice Simple,
+con pruebas de propagación parcial, agotamiento de reintentos, hashes distintos,
+retirada de archivos y errores HTTP. Se comprobó contra los artefactos originales
+del workflow publicado, conservados por separado de las nuevas construcciones
+locales. Esta mejora del verificador no reemplaza la alpha ya publicada.
 
 ## Problema empresarial y utilidad comprobada
 
@@ -170,16 +197,20 @@ política de tratamiento requiere una decisión independiente; no se han silenci
 1. Mantener el Trusted Publisher del proyecto `aicomply-cli` con el repositorio
    `aiambo08/AIComply`, workflow `publish.yml` y entorno `pypi`.
    El permiso `id-token: write` existe solo en el job de publicación.
-2. Revisar versión, changelog y `uv.lock`. El tag debe ser canónico:
-   `v2.0.0a0`, no `v2.0.0-alpha`. Comprobar que esa versión no exista en PyPI.
+2. Revisar versión, changelog y `uv.lock`. Para una nueva publicación incrementar
+   la versión y comprobar que no exista en PyPI; `2.0.0a0` ya está publicada.
+   El tag debe coincidir con la versión canónica del proyecto.
 3. Ejecutar el gate local y, si se desea, `workflow_dispatch` en la rama:
    la ejecución manual solo comprueba calidad, incluso si se selecciona un tag.
 4. **Con autorización de publicación**, crear y enviar el tag sobre el commit
    revisado. Un push `v*` ejecuta calidad en 3.11/3.13 y publica únicamente los
    artefactos producidos y probados por el job de 3.11. No reconstruye en el
    job que recibe permisos de publicación.
-5. El job `verify-pypi` compara los SHA-256 de ambos archivos con la API pública
-   de PyPI (reintentos acotados por propagación), instala la versión exacta con
+5. El job `verify-pypi` compara los SHA-256 de ambos archivos con la API de la
+   versión y el índice Simple que utiliza pip. Espera a que ambos archivos
+   aparezcan en los dos endpoints, con seis intentos y pausas de diez segundos.
+   Un hash diferente o un archivo retirado produce un error sin reintentar.
+   Después instala la versión exacta con
    pip desde PyPI, ejecuta `pip check` y repite los escenarios fuera del checkout.
    Ese job solo tiene permiso de lectura del repositorio.
 6. Verificar también la procedencia pública y guardar el enlace al workflow.
@@ -202,6 +233,7 @@ Este comando selecciona la alpha verificada. `pip install aicomply-cli` sin vers
 Referencias: [Trusted Publishing](https://docs.pypi.org/trusted-publishers/),
 [GitHub Actions](https://docs.pypi.org/trusted-publishers/using-a-publisher/),
 [API JSON de PyPI](https://docs.pypi.org/api/json/),
+[índice Simple de PyPI](https://docs.pypi.org/api/index-api/),
 [preversiones de pip](https://pip.pypa.io/en/stable/cli/pip_install/#pre-release-versions).
 
 ## Condiciones que siguen pendientes

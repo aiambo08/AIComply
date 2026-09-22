@@ -212,6 +212,14 @@ runs:
             elif count == 0:
                 status = "no_findings"
             emit(status, count, report_format == "sarif")
+            if count != "":
+                print(f"AIComply scan completed: {count} finding(s) in the saved report.")
+            if result.returncode == 1:
+                print(
+                    "::error::AIComply findings exceed the configured policy (exit 1). "
+                    "Review the saved report and, when uploaded, Security > Code scanning. "
+                    "Scanner execution errors use exit code 2."
+                )
             sys.exit(result.returncode)
         PY
 
