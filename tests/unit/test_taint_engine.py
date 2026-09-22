@@ -183,3 +183,36 @@ def chat_api():
 
     art50_findings = [f for f in findings if f.rule_id == "EUAIA-ART50-003"]
     assert len(art50_findings) >= 1
+
+
+def test_source_matched_by_literal_spelling_when_alias_resolves_elsewhere(rules):
+    code = """
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+def generate_code(prompt):
+    tokenizer = AutoTokenizer.from_pretrained("medtriage/discharge-7b")
+    model = AutoModelForCausalLM.from_pretrained("medtriage/discharge-7b")
+    ids = tokenizer(prompt, return_tensors="pt")
+    code = tokenizer.decode(model.generate(**ids)[0])
+    return eval(code)
+"""
+    tree = ast.parse(code)
+    aliases = {"model": "transformers.AutoModelForCausalLM.from_pretrained"}
+    engine = DataFlowEngine(rules, aliases=aliases)
+    findings = engine.analyze_file(tree, code, "worker.py", aliases=aliases)
+    assert any(f.rule_id == "EUAIA-ART14-002" and "eval" in f.message for f in findings)
+
+
+def test_literal_spelling_does_not_match_partial_segments(rules):
+    code = """
+import os
+
+def helper():
+    text = my_model.generate_report()
+    os.system(text)
+    other = model.generated
+    os.system(other)
+"""
+    tree = ast.parse(code)
+    findings = DataFlowEngine(rules).analyze_file(tree, code, "helper.py")
+    assert not [f for f in findings if f.rule_id == "EUAIA-ART14-002"]

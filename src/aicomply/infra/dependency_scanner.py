@@ -90,16 +90,20 @@ class DependencyScanner:
         findings: List[Finding] = []
 
         for line_idx, line in enumerate(lines, start=1):
-            line_clean = line.split("#")[0].strip()
+            line_clean = re.sub(r"(?:^|\s)#.*$", "", line).strip()
             if not line_clean:
                 continue
 
-            # Parsear nombre de paquete (ej. "torch>=2.0.0", "deepface==0.0.79", "face-recognition")
+            # Parsear nombre de paquete (ej. "torch>=2.0.0", "deepface==0.0.79", "face-recognition",
+            # "git+https://host/repo.git#egg=deepface", "-e git+...#egg=deepface")
+            egg_match = re.search(r"#egg=([a-zA-Z0-9_\-\.]+)", line_clean)
             pkg_match = re.match(r"^([a-zA-Z0-9_\-\.]+)", line_clean)
-            if not pkg_match:
+            if egg_match:
+                pkg_name = _package_name(egg_match.group(1))
+            elif pkg_match and not re.match(r"^\S*://", line_clean):
+                pkg_name = _package_name(pkg_match.group(1))
+            else:
                 continue
-
-            pkg_name = _package_name(pkg_match.group(1))
 
             for rule in self.rules:
                 for pattern in rule.patterns:

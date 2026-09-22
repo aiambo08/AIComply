@@ -160,7 +160,7 @@ al sink aunque exista una variable de aprobación humana.
 | CLI, proyecto sin findings | Texto `CONFORMIDAD TÉCNICA VALIDADA` | Código 0 conservado; texto sin hallazgos, sin conclusión jurídica |
 | Anexo IV, imports de ejemplo | `Conformidad Plena` | Clasificación pendiente y evidencias por aportar |
 | Configuración corrupta | Volver silenciosamente a defaults | Error explícito sin generar reporte de éxito |
-| Compose con alias (dos casos) | Aceptar anchors/merge aliases | Rechazo uniforme de aliases para evitar expansión/ciclos; copia expandida revisada como entrada alternativa |
+| Compose con alias (dos casos) | Aceptar anchors/merge aliases | Aceptados con presupuesto (profundidad, eventos, aliases) y loader estricto; revisado tras el caso cliente MedTriage, donde el rechazo abortaba escaneos legítimos |
 | Taint, `is_human_approved` | Suprimir el finding por el nombre de la variable | Mantener señal hasta demostrar validación y supervisión efectiva |
 | Benchmark TN-03 | Tratar la misma compuerta nominal como negativo cierto | Conservar su código como TP-16 y exigir `EUAIA-ART14-002`; añadir TN-16 con selección cerrada de comandos constantes |
 

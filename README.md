@@ -103,10 +103,16 @@ código a servicios externos. No modela completamente funciones externas,
 reflexión, concurrencia, heap, runtime, datasets ni arquitectura desplegada.
 
 Rechaza entradas ilegibles, symlinks, archivos especiales, codificación inválida,
-sintaxis Python inválida e inputs excesivos. Compose con aliases/merges requiere
-una copia expandida revisada manualmente. Los límites del CLI son 4 MiB por
-archivo, 100 MiB totales y 10.000 entradas. Las rutas ignoradas se registran.
-Las extensiones no admitidas no se analizan; no hay cobertura universal.
+sintaxis Python inválida e inputs excesivos; los errores indican el archivo y la
+causa. Los archivos Python pueden declarar su codificación (PEP 263). Compose
+admite anclas, aliases y `<<` con presupuesto (profundidad 64, 20.000 eventos,
+256 aliases); los servicios se analizan ya expandidos y las etiquetas YAML no
+seguras se rechazan. `requirements.txt` admite opciones pip conocidas, `--hash`,
+URLs, VCS y `-r`/`-e` relativos dentro del objetivo; las opciones desconocidas y
+las rutas externas producen error. Los límites del CLI son 4 MiB por archivo,
+100 MiB totales y 10.000 entradas; un lockfile mayor debe excluirse con
+`exclude_paths`. Las rutas ignoradas se registran. Las extensiones no admitidas
+no se analizan; no hay cobertura universal.
 
 ### Procedencia
 

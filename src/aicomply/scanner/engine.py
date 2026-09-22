@@ -6,11 +6,13 @@ el filtrado por exclusiones y la agregación determinista del reporte.
 
 import ast
 import hashlib
+import io
 import json
 import os
 import re
 import stat
 import time
+import tokenize
 import tomllib
 from datetime import datetime, timezone
 from fnmatch import fnmatch
@@ -21,11 +23,11 @@ from typing import List, Optional, Set, Tuple
 import yaml
 
 from aicomply.config import (
-    AIComplyConfig, checked_path, load_policy_yaml, load_project_config, read_regular_file,
+    AIComplyConfig, checked_path, error_summary, load_project_config, read_regular_file,
 )
 from aicomply.evidence.hasher import compute_scan_hash
 from aicomply.infra.dependency_scanner import DependencyScanner
-from aicomply.infra.docker_scanner import DockerScanner
+from aicomply.infra.docker_scanner import DockerScanner, load_compose_yaml
 from aicomply.infra.input_reader import MAX_INPUT_BYTES
 from aicomply.rules.loader import RuleCatalog, load_rules_from_dir
 from aicomply.scanner.ast_parser import PythonASTScanner
@@ -95,6 +97,69 @@ def _dependency_list(value: object) -> None:
         _validate_requirement(dependency)
 
 
+REQUIREMENT_COMMENT = re.compile(r"(?:^|\s)#.*$")
+URL_REQUIREMENT = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*\+)?(?:https?|ssh|git|file)://\S+")
+HASH_OPTION = re.compile(r"--hash=(?:sha256|sha384|sha512):[0-9a-fA-F]+")
+FILE_OPTIONS = {"-r", "--requirement", "-c", "--constraint"}
+EDITABLE_OPTIONS = {"-e", "--editable"}
+VALUE_OPTIONS = {
+    "-i", "--index-url", "--extra-index-url", "-f", "--find-links", "--trusted-host",
+    "--no-binary", "--only-binary", "--use-feature",
+}
+FLAG_OPTIONS = {"--no-index", "--pre", "--prefer-binary", "--require-hashes"}
+
+
+def _local_reference(reference: str, requirements_path: Path) -> Path:
+    """pip file references must stay inside the scanned project and point to real entries."""
+    candidate = Path(reference)
+    if candidate.is_absolute() or ".." in candidate.parts or not reference.strip():
+        raise ValueError(f"Requirements reference escapes the project: {reference}")
+    resolved = requirements_path.parent / candidate
+    try:
+        mode = resolved.lstat().st_mode
+    except OSError as exc:
+        raise ValueError(f"Requirements reference not found: {reference}") from exc
+    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        raise ValueError(f"Requirements reference is not a regular entry: {reference}")
+    return resolved
+
+
+def _split_option(line: str) -> Tuple[str, str]:
+    head, _, rest = line.partition(" ")
+    if head.startswith("--") and "=" in head:
+        option, _, inline_value = head.partition("=")
+        return option, f"{inline_value} {rest}".strip()
+    return head, rest.strip()
+
+
+def _validate_requirements_line(line: str, requirements_path: Path) -> None:
+    """pip option lines (-r, -e, --index-url, --hash), direct URLs and PEP 508 requirements."""
+    if line.startswith("-"):
+        option, value = _split_option(line)
+        if option in FILE_OPTIONS:
+            if not stat.S_ISREG(_local_reference(value, requirements_path).lstat().st_mode):
+                raise ValueError(f"Requirements reference is not a file: {value}")
+        elif option in EDITABLE_OPTIONS:
+            if not URL_REQUIREMENT.fullmatch(value):
+                _local_reference(value.split("[", 1)[0], requirements_path)
+        elif option in VALUE_OPTIONS:
+            if not value or any(character.isspace() for character in value):
+                raise ValueError(f"Malformed pip option: {option}")
+        elif option in FLAG_OPTIONS:
+            if value:
+                raise ValueError(f"Unexpected value for pip option: {option}")
+        else:
+            raise ValueError(f"Unsupported pip option: {option}")
+        return
+    requirement, *hashes = line.split(" --hash=")
+    for digest in hashes:
+        if HASH_OPTION.fullmatch(f"--hash={digest.strip()}") is None:
+            raise ValueError("Malformed --hash option")
+    if URL_REQUIREMENT.fullmatch(requirement.strip()):
+        return
+    _validate_requirement(requirement)
+
+
 def _validate_requirement(requirement: str) -> None:
     requirement, separator, marker = requirement.strip().partition(";")
     if separator:
@@ -155,9 +220,17 @@ def _unique_json_mapping(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
+def _decode_source(path: Path, data: bytes) -> str:
+    """UTF-8 (with BOM) for every input; Python sources may also declare a PEP 263 encoding."""
+    if path.suffix.lower() in PYTHON_EXTENSIONS:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
+        return data.decode(encoding)
+    return data.decode("utf-8-sig")
+
+
 def _validate_source(path: Path, data: bytes) -> str:
     try:
-        text = data.decode("utf-8-sig")
+        text = _decode_source(path, data)
         if "\x00" in text:
             raise ValueError("NUL bytes in source")
         name = path.name.lower()
@@ -189,7 +262,7 @@ def _validate_source(path: Path, data: bytes) -> str:
             for section in ("default", "develop"):
                 _mapping(document.get(section, {}))
         elif "compose" in name and path.suffix.lower() in {".yaml", ".yml"}:
-            document = _mapping(load_policy_yaml(text))
+            document = _mapping(load_compose_yaml(text))
             services = _mapping(document.get("services"))
             for service in services.values():
                 service = _mapping(service)
@@ -199,12 +272,14 @@ def _validate_source(path: Path, data: bytes) -> str:
                     raise ValueError("Expected a privileged boolean")
         elif name.startswith("requirements") and name.endswith(".txt"):
             for line in text.splitlines():
-                line = line.split("#", 1)[0].strip()
+                line = REQUIREMENT_COMMENT.sub("", line).rstrip("\\").strip()
                 if line:
-                    _validate_requirement(line)
+                    _validate_requirements_line(line, path)
         return text
     except (ValueError, SyntaxError, yaml.YAMLError, RecursionError) as exc:
-        raise ValueError(f"Unable to fully parse scan input: {path}") from exc
+        raise ValueError(
+            f"Unable to fully parse scan input: {path} ({error_summary(exc)})"
+        ) from exc
 
 
 class ScanEngine:
@@ -299,7 +374,7 @@ class ScanEngine:
                 ))
                 file_path = snapshot_root / relative
                 file_path.parent.mkdir(parents=True, exist_ok=True)
-                file_path.write_bytes(data)
+                file_path.write_bytes(text.encode("utf-8"))
 
                 file_findings: List[Finding] = []
                 if file_path.suffix.lower() in PYTHON_EXTENSIONS:

@@ -19,6 +19,17 @@ from aicomply.schemas import (
 )
 
 
+def _call_matches(target_lower: str, *names: str) -> bool:
+    """Coincidencia por segmentos: 'model.generate' no coincide con 'model.generate.decode'."""
+    if not target_lower:
+        return False
+    for name in names:
+        lowered = name.lower()
+        if lowered == target_lower or lowered.endswith("." + target_lower):
+            return True
+    return False
+
+
 class ASTContextVisitor(ast.NodeVisitor):
     """
     Recorre el AST recopilando imports, llamadas a funciones, asignaciones
@@ -36,6 +47,8 @@ class ASTContextVisitor(ast.NodeVisitor):
         # Registros de nodos identificados
         self.imports: List[Tuple[str, ast.AST]] = []
         self.calls: List[Tuple[str, ast.Call, Dict[str, Any]]] = []
+        self.syntactic_names: Dict[ast.Call, str] = {}
+        self.instances: Set[str] = set()
         self.assignments: List[Tuple[str, Any, ast.AST]] = []
         self.function_defs: List[Tuple[str, ast.AST]] = []
         self.has_logging: bool = False
@@ -96,17 +109,24 @@ class ASTContextVisitor(ast.NodeVisitor):
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     self.aliases[target.id] = call_name
+                    self.instances.add(target.id)
 
         # 2. Asignación de alias directo: engine = client -> aliases["engine"] = aliases["client"]
         elif isinstance(node.value, (ast.Name, ast.Attribute)):
             source_val = self._resolve_call_name(node.value)
+            is_instance = isinstance(node.value, ast.Name) and node.value.id in self.instances
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     self.aliases[target.id] = source_val
+                    if is_instance:
+                        self.instances.add(target.id)
+                    else:
+                        self.instances.discard(target.id)
         else:
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     self.aliases.pop(target.id, None)
+                    self.instances.discard(target.id)
 
         # 3. Asignación de constantes para AST_ASSIGNMENT: ai_disclaimer = False
         for target in node.targets:
@@ -122,11 +142,13 @@ class ASTContextVisitor(ast.NodeVisitor):
         value_name = self._resolve_call_name(node.value) if node.value else ""
         if isinstance(node.target, ast.Name) and node.value:
             self.aliases.pop(node.target.id, None)
+            self.instances.discard(node.target.id)
         if isinstance(node.target, ast.Name):
             if node.value and isinstance(node.value, ast.Constant):
                 self.assignments.append((node.target.id, node.value.value, node))
             elif node.value and isinstance(node.value, ast.Call):
                 self.aliases[node.target.id] = value_name
+                self.instances.add(node.target.id)
             elif node.value and isinstance(node.value, (ast.Name, ast.Attribute)):
                 self.aliases[node.target.id] = value_name
 
@@ -154,6 +176,7 @@ class ASTContextVisitor(ast.NodeVisitor):
         if node.returns:
             self.visit(node.returns)
         outer_aliases = self.aliases.copy()
+        outer_instances = self.instances.copy()
         args = node.args
         parameters = [*args.posonlyargs, *args.args, *args.kwonlyargs]
         if args.vararg:
@@ -162,12 +185,30 @@ class ASTContextVisitor(ast.NodeVisitor):
             parameters.append(args.kwarg)
         for parameter in parameters:
             self.aliases.pop(parameter.arg, None)
+            self.instances.discard(parameter.arg)
         for statement in node.body:
             self.visit(statement)
         self.aliases = outer_aliases
+        self.instances = outer_instances
+
+    def _syntactic_call_name(self, node: ast.AST) -> str:
+        """Nombre tal como aparece en el código, sin resolver alias (model.generate)."""
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            value_str = self._syntactic_call_name(node.value)
+            return f"{value_str}.{node.attr}" if value_str else node.attr
+        if isinstance(node, ast.Call):
+            return self._syntactic_call_name(node.func)
+        return ""
 
     def visit_Call(self, node: ast.Call) -> None:
-        call_name = self._resolve_call_name(node.func)
+        # tokenizer(text) invoca la instancia, no repite su constructor from_pretrained.
+        if isinstance(node.func, ast.Name) and node.func.id in self.instances:
+            call_name = node.func.id
+        else:
+            call_name = self._resolve_call_name(node.func)
+        self.syntactic_names[node] = self._syntactic_call_name(node.func)
         args_dict = self._extract_call_args(node)
 
         # Detección de logging en llamada
@@ -269,7 +310,7 @@ class PythonASTScanner:
 
         elif pattern.type == PatternType.AST_CALL:
             for call_name, node, kwargs in visitor.calls:
-                if target_lower in call_name.lower():
+                if _call_matches(target_lower, call_name, visitor.syntactic_names.get(node, "")):
                     if pattern.match_args:
                         if not self._check_match_args(pattern.match_args, kwargs):
                             continue
@@ -291,7 +332,7 @@ class PythonASTScanner:
         elif pattern.type == PatternType.AST_ABSENCE:
             matching_calls = [
                 (name, node) for name, node, _ in visitor.calls
-                if name.lower() == target_lower or name.lower().endswith("." + target_lower)
+                if _call_matches(target_lower, name, visitor.syntactic_names.get(node, ""))
             ]
             if matching_calls and not visitor.has_logging:
                 for _, node in matching_calls:

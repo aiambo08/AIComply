@@ -33,7 +33,8 @@ def rules():
         (DockerScanner, "compose.yml", "services: ["),
         (DockerScanner, "compose.yml", "services: []"),
         (DockerScanner, "compose.yml", "services:\n  worker: true"),
-        (DockerScanner, "compose.yml", "defaults: &defaults {user: root}\nservices:\n  app: *defaults"),
+        (DockerScanner, "compose.yml", "services: !!python/object/apply:os.system ['id']"),
+        (DockerScanner, "compose.yml", "services:\n  app: &a\n    image: x\n" + "".join(f"  s{i}: *a\n" for i in range(300))),
     ],
 )
 def test_invalid_or_unsupported_input_never_looks_clean(
@@ -43,6 +44,13 @@ def test_invalid_or_unsupported_input_never_looks_clean(
     path.write_text(content, encoding="utf-8")
     with pytest.raises((ValueError, SyntaxError, yaml.YAMLError)):
         scanner_type(rules).scan_file(path, tmp_path)
+
+
+def test_compose_alias_resolution_keeps_root_visible(tmp_path, rules):
+    path = tmp_path / "compose.yml"
+    path.write_text("defaults: &defaults {user: root}\nservices:\n  app: *defaults\n", encoding="utf-8")
+    findings = DockerScanner(rules).scan_file(path, tmp_path)
+    assert any(f.rule_id == "EUAIA-ART15-006" for f in findings)
 
 
 @pytest.mark.parametrize(

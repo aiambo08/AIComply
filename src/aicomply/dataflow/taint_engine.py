@@ -99,11 +99,27 @@ class DataFlowEngine:
             return self.resolved_calls.get(node, self._resolve_name(node.func))
         return ""
 
+    def _syntactic_name(self, node: ast.AST) -> str:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            base = self._syntactic_name(node.value)
+            return f"{base}.{node.attr}" if base else node.attr
+        if isinstance(node, ast.Call):
+            return self._syntactic_name(node.func)
+        return ""
+
     def _matches_any_target(self, call_name: str, targets: List[str]) -> bool:
         name = call_name.lower()
         return any(
             target and (name == target.lower() or name.endswith("." + target.lower()))
             for target in targets
+        )
+
+    def _call_matches(self, node: ast.Call, name: str, targets: List[str]) -> bool:
+        """Resolved alias (openai.OpenAI.responses.create) or literal spelling (model.generate)."""
+        return self._matches_any_target(name, targets) or self._matches_any_target(
+            self._syntactic_name(node), targets
         )
 
     def _create_location(
@@ -246,11 +262,11 @@ class DataFlowEngine:
                     arguments = _join(arguments, expression(arg, env, emit))
                 name = self._resolve_name(node)
                 if (
-                    self._matches_any_target(name, sinks)
+                    self._call_matches(node, name, sinks)
                     and arguments.state == TaintState.TAINTED_UNSAFE
                 ):
                     emit(node, arguments)
-                if self._matches_any_target(name, sources):
+                if self._call_matches(node, name, sources):
                     return _Value(
                         TaintState.TAINTED_UNSAFE,
                         (
@@ -262,7 +278,7 @@ class DataFlowEngine:
                         ),
                     )
                 value = _join(value, arguments)
-                if self._matches_any_target(name, sanitizers):
+                if self._call_matches(node, name, sanitizers):
                     return _Value(TaintState.SANITIZED)
                 return value
             if isinstance(

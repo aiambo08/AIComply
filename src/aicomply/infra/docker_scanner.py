@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Set
 
 import yaml
 
+from aicomply.config import StrictSafeLoader
 from aicomply.evidence.hasher import compute_finding_hash
 from aicomply.infra.input_reader import read_scan_text
 from aicomply.schemas import (
@@ -18,6 +19,52 @@ from aicomply.schemas import (
     PatternType,
     Rule,
 )
+
+
+COMPOSE_MAX_DEPTH = 64
+COMPOSE_MAX_EVENTS = 20000
+COMPOSE_MAX_ALIASES = 256
+
+
+ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(\"[^\"]*\"|'[^']*'|\S*)")
+BUILD_VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _literal_assignments(line: str) -> List[tuple[str, str]]:
+    """ARG APP_USER=app / ENV A=1 B="two": only literal values, nested references stay unresolved."""
+    return [
+        (name, value.strip("\"'"))
+        for name, value in ASSIGNMENT.findall(line.partition(" ")[2])
+        if "$" not in value
+    ]
+
+
+def _expand_build_vars(value: str, build_vars: Dict[str, str]) -> str:
+    def replace(match: "re.Match[str]") -> str:
+        name = match.group(1) or match.group(3)
+        if name in build_vars:
+            return build_vars[name]
+        if match.group(2) is not None:
+            return match.group(2)
+        return match.group(0)
+
+    return BUILD_VAR.sub(replace, value)
+
+
+def load_compose_yaml(text: str) -> object:
+    """Compose input may use anchors/merge keys; parsing stays bounded by depth, events and aliases."""
+    depth = 0
+    alias_count = 0
+    for index, event in enumerate(yaml.parse(text)):
+        if isinstance(event, yaml.events.AliasEvent):
+            alias_count += 1
+        elif isinstance(event, (yaml.events.MappingStartEvent, yaml.events.SequenceStartEvent)):
+            depth += 1
+        elif isinstance(event, (yaml.events.MappingEndEvent, yaml.events.SequenceEndEvent)):
+            depth -= 1
+        if depth > COMPOSE_MAX_DEPTH or index >= COMPOSE_MAX_EVENTS or alias_count > COMPOSE_MAX_ALIASES:
+            raise ValueError("Compose YAML complexity budget exceeded")
+    return yaml.load(text, Loader=StrictSafeLoader)
 
 
 class DockerScanner:
@@ -74,6 +121,7 @@ class DockerScanner:
         findings: List[Finding] = []
         has_non_root_user = False
         user_line = 1
+        build_vars: Dict[str, str] = {}
 
         for line_idx, line in enumerate(lines, start=1):
             line_stripped = line.strip()
@@ -86,11 +134,15 @@ class DockerScanner:
             if instruction == "FROM":
                 has_non_root_user = False
                 user_line = line_idx
+            if instruction in {"ARG", "ENV"}:
+                for name, value in _literal_assignments(line_stripped):
+                    build_vars[name] = value
             if instruction == "USER":
                 if len(parts) > 1:
-                    user_val = parts[1].split(":", 1)[0].strip().lower()
+                    user_val = _expand_build_vars(parts[1], build_vars).split(":", 1)[0].strip().lower()
                     has_non_root_user = (
-                        user_val not in {"root", "0"}
+                        bool(user_val)
+                        and user_val not in {"root", "0"}
                         and not user_val.startswith(("$", "{"))
                     )
                     user_line = line_idx
@@ -166,17 +218,7 @@ class DockerScanner:
         suppressions: Dict[int, Set[str]],
     ) -> List[Finding]:
         findings: List[Finding] = []
-        depth = 0
-        for index, event in enumerate(yaml.parse(content)):
-            if isinstance(event, yaml.events.AliasEvent):
-                raise ValueError("Compose YAML aliases require manual review")
-            if isinstance(event, (yaml.events.MappingStartEvent, yaml.events.SequenceStartEvent)):
-                depth += 1
-            elif isinstance(event, (yaml.events.MappingEndEvent, yaml.events.SequenceEndEvent)):
-                depth -= 1
-            if depth > 64 or index > 20000:
-                raise ValueError("Compose YAML complexity budget exceeded")
-        parsed = yaml.safe_load(content)
+        parsed = load_compose_yaml(content)
 
         if not isinstance(parsed, dict):
             raise ValueError("Compose document must be a mapping")
