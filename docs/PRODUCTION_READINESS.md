@@ -11,21 +11,22 @@ documenta el estado posterior a esta revisión: 625 pruebas correctas en Python
 3.11/3.13, omisiones de SDK corregidas y wheel/sdist instalados fuera del checkout.
 La corrección autorizada de cinco validadores nominales conserva los umbrales
 del benchmark; los sanitizadores explícitos del catálogo aún requieren revisión.
-La distribución pública sigue en 0.1.0; no confundir los gates
-verdes con autorización para publicar ni con detección suficiente en clientes.
+La alpha [2.0.0a0](https://pypi.org/project/aicomply-cli/2.0.0a0/) se publicó
+con autorización el 21 de septiembre de 2026; su instalación y hashes públicos
+están verificados. Publicar el paquete no demuestra detección suficiente en clientes.
 
 **No autorizar todavía un lanzamiento general ni un SaaS multiempresa.**
 Esta propuesta refuerza un producto local alpha y deja una base verificable
-para revisión. No se ha publicado en PyPI, desplegado un servicio ni realizado
-una evaluación jurídica de un cliente.
+para revisión. Se ha publicado el paquete para pilotos locales; no se ha
+desplegado un servicio ni realizado una evaluación jurídica de un cliente.
 
 El responsable autorizó actualizar las siete expectativas incompatibles con
 los contratos de seguridad y prudencia jurídica. La suite completa pasa
 **531 pruebas** y el gate integrado local de distribución termina correctamente.
 No se han desactivado pruebas, rebajado umbrales ni añadido `|| true`.
 La matriz remota de calidad pasa en Python 3.11 y 3.13 sobre `f4ac0e6`.
-Quedan la decisión de política del autoescaneo y las condiciones operativas y
-regulatorias detalladas abajo.
+La política del autoescaneo fue aprobada el 22 de septiembre y se verifica por
+huellas y contenido; quedan las condiciones operativas y regulatorias detalladas abajo.
 
 El [system prompt especializado](AGENT_SYSTEM_PROMPT.md) fue aplicado a la
 implementación: evidencia antes que afirmaciones, revisión normativa contextual,
@@ -185,17 +186,16 @@ No basta quitar el rechazo de aliases en un solo parser.
 
 ### Autoescaneo del repositorio
 
-El autoescaneo con la política por defecto produce 23 señales: 18 sobre el
-ejemplo deliberadamente riesgoso de fintech y cinco sobre literales del propio
-catálogo/analizador (tres patrones regex, una remediación y un comentario).
+El autoescaneo actual con la política por defecto produce 25 señales: 18 sobre
+el ejemplo deliberadamente riesgoso de fintech, dos sobre datos sintéticos del
+smoke y cinco sobre literales del propio catálogo/analizador.
 No demuestra infracciones legales ni vulnerabilidades ejecutadas.
-El comando local termina con código 1. El workflow de compliance sobre `f4ac0e6`
-también propaga ese código y sube el SARIF correctamente.
-
-Antes de exigir ese check para merge, el mantenedor debe decidir la política
-de revisión para muestras y reglas del escáner: separar explícitamente fixtures
-de producto, justificar excepciones por ubicación o mantener el gate estricto.
-No se han añadido exclusiones nuevas ni cambiado el umbral para ocultarlo.
+La CLI normal mantiene el código 1. Para este repositorio, el mantenedor aprobó
+una baseline exacta: el gate verifica las huellas de los 25 hallazgos, los bytes
+de sus siete archivos y las huellas de reglas y configuración. El SARIF conserva
+todas las detecciones. Cualquier discrepancia o error bloquea; no se añaden
+exclusiones generales. Véase el
+[contrato y procedimiento de revisión](PYPI_VALIDATION.md#diagnóstico-del-autoescaneo-en-github-actions).
 
 ## Modelo de operación admisible
 
@@ -219,8 +219,8 @@ completo contra vulnerabilidades del intérprete.
 
 ### Gates del candidato local
 
-- Resolver la política del autoescaneo sin exclusiones de emergencia y exigir
-  los gates de calidad en cada revisión candidata a publicación.
+- Mantener la baseline revisada del autoescaneo y exigir los gates de calidad
+  en cada revisión candidata a publicación.
 - Fijar ground truth del benchmark con datos autorizados, revisión experta,
   versión de reglas y método de medición; añadir repositorios representativos.
 - Cotejar con asesoría jurídica el texto consolidado y acto modificativo del
@@ -265,7 +265,7 @@ sí fija el entorno reproducido en esta revisión.
 
 ## Orden de cierre
 
-1. Confirmar los gates remotos y decidir la política del autoescaneo.
+1. Confirmar los gates remotos, incluida la baseline aprobada del autoescaneo.
 2. Completar los casos UI pendientes.
 3. Completar revisión jurídica, benchmark representativo y controles operativos.
 4. Revisar/mergear PR, aplicar el blueprint compatible y publicar una versión

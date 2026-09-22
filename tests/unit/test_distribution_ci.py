@@ -84,6 +84,15 @@ def test_scan_preserves_completed_exit_codes(tmp_path, monkeypatch, code, count,
     assert (tmp_path / "result.sarif").read_text() == sarif(count)
 
 
+@pytest.mark.parametrize("code,count", [(0, 0), (0, 2), (1, 2)])
+def test_scan_logs_finding_count_and_policy_failure(tmp_path, monkeypatch, capsys, code, count):
+    actual, _, _ = execute_scan(tmp_path, monkeypatch, code, sarif(count))
+    message = capsys.readouterr().out
+    assert actual == code
+    assert f"{count} finding(s) in the saved report" in message
+    assert ("::error::AIComply findings exceed the configured policy" in message) == (code == 1)
+
+
 @pytest.mark.parametrize("code", [2, 7, 127])
 def test_scan_errors_do_not_upload_stale_reports(tmp_path, monkeypatch, code):
     destination = tmp_path / "result.sarif"

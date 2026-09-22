@@ -4,18 +4,31 @@ Análisis estático local de señales técnicas relacionadas con el Reglamento
 europeo de IA y el RGPD. Python 3.11+, CLI, consola local, JSON, Markdown,
 SARIF 2.1.0 y evidencia firmada con Ed25519.
 
-**Estado: alpha en revisión.** No es una certificación, una opinión jurídica
+**Estado: alpha publicada para pilotos locales supervisados.** No es una certificación, una opinión jurídica
 ni una garantía de evitar multas. Sin hallazgos no significa conformidad.
 
-**Distribución:** la versión pública comprobada el 20 de septiembre de 2026 es
-`aicomply-cli==0.1.0`; no incluye todas las mejoras de esta rama. La siguiente
-prepublicación preparada es `2.0.0a0` y todavía no se ha publicado.
+**Distribución:** [aicomply-cli 2.0.0a0](https://pypi.org/project/aicomply-cli/2.0.0a0/)
+se publicó el 21 de septiembre de 2026 mediante Trusted Publishing.
+El [workflow de publicación y verificación](https://github.com/aiambo08/AIComply/actions/runs/35587531905)
+comprobó los hashes del wheel/sdist y la instalación de la versión exacta desde PyPI.
 Consulta la [validación de producto y PyPI](docs/PYPI_VALIDATION.md), incluida
 la corrección de validadores nominales y sus límites, antes de adoptar el
 analizador como gate de seguridad. Las versiones alpha requieren selección
 explícita en pip; una instalación sin versión puede conservar la versión estable anterior.
 Antes de desplegar, consultar [condiciones de lanzamiento](docs/PRODUCTION_READINESS.md).
-Los cambios de esta rama no equivalen a una versión publicada en PyPI.
+
+## Instalación de la alpha desde PyPI
+
+Dentro de un entorno virtual propio de AIComply, con Python 3.11 o superior:
+
+```bash
+python -m pip install --index-url https://pypi.org/simple 'aicomply-cli==2.0.0a0'
+python -m pip check
+aicomply --help
+```
+
+Esta instalación permite ejecutar `aicomply` directamente; los comandos con
+`uv run` de las secciones siguientes corresponden al checkout del repositorio.
 
 ## Instalación reproducible desde el repositorio
 
@@ -52,6 +65,11 @@ uv run aicomply docgen /ruta/cliente --name "Sistema declarado" \
 | 0 | Escaneo completado y política de hallazgos satisfecha; no acredita legalidad |
 | 1 | Hallazgos por encima de la tolerancia configurada; por defecto cualquier hallazgo |
 | 2 | Error de argumentos, configuración, lectura, análisis, firma o escritura |
+
+En GitHub Actions, `Execute AIComply scan` con código 1 indica hallazgos que
+bloquean la política. Revisar el SARIF en **Security → Code scanning** cuando se
+haya subido. El [diagnóstico del autoescaneo](docs/PYPI_VALIDATION.md#diagnóstico-del-autoescaneo-en-github-actions)
+documenta los casos de prueba del propio repositorio.
 
 `--enforce-risk-tier high_risk` tolera `high_risk`, `limited_risk` y
 `minimal_risk`, pero falla con `prohibited`. Son **etiquetas técnicas del
@@ -174,9 +192,11 @@ Para subir SARIF, activar `upload-sarif` y conceder `security-events: write`
 solo al job correspondiente. Revisar permisos y confidencialidad: subir SARIF
 transfiere resultados a GitHub. En forks y Dependabot no se intenta esa subida.
 El Action valida un reporte fresco y propaga los errores; no añadir `|| true`.
-Las fixtures intencionalmente riesgosas de este repositorio disparan hallazgos:
-la política del autoescaneo requiere una decisión del mantenedor, no una
-excepción silenciosa en CI.
+El autoescaneo de este repositorio usa una
+[baseline aprobada de 25 detecciones](docs/PYPI_VALIDATION.md#diagnóstico-del-autoescaneo-en-github-actions):
+conserva el SARIF completo y exige huellas y contenido exactos; cualquier hallazgo
+nuevo o cambio en los archivos revisados, reglas o configuración bloquea.
+Estas excepciones internas no se aplican a proyectos cliente ni al Action.
 
 ## Desarrollo y controles
 

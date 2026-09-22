@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+- Verify both published artifacts in PyPI's release metadata and Simple index
+  before installing; retry index propagation without accepting changed hashes
+  or yanked files.
+- Explain finding-policy failures and report counts in GitHub Action logs while
+  preserving exit codes and SARIF uploads.
+- Enforce the owner-approved repository self-scan baseline: retain all 25 findings
+  in SARIF while requiring exact identities, source hashes and rule/configuration
+  fingerprints. New findings, stale entries, content drift and execution errors
+  block CI; client CLI and Action policies are unchanged.
+
+## [2.0.0a0] - 2026-09-21
+
 - Add modern SDK source coverage for OpenAI Responses, asynchronous/Azure OpenAI,
   asynchronous Anthropic and Google GenAI, with paired synthetic regressions.
 - Validate wheel/sdist metadata with strict Twine checks and exercise installed
@@ -14,7 +26,9 @@
   retaining the 0.95 thresholds and constant-action negatives; exercise the fix
   in installed wheel/sdist scenarios. Catalog-specific sanitizers still require
   manual policy review.
-- Publication remains pending. Historical claims below are not evidence of
+- Publish the alpha through Trusted Publishing and verify public wheel/sdist
+  hashes, provenance and an isolated installation from PyPI.
+- Historical claims below are not evidence of
   whole-program soundness or accuracy on real client repositories.
 
 All notable changes to this project will be documented in this file.
@@ -85,4 +99,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Full automated test suite with 47 unit and integration tests achieving 100% pass rate.
   - GitHub Actions CI workflow with SARIF ingestion via CodeQL Action v4.
 
+[2.0.0a0]: https://github.com/aiambo08/AIComply/tree/v2.0.0a0
 [0.1.0]: https://github.com/aiambo08/AIComply/releases/tag/v0.1.0
