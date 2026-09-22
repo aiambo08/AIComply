@@ -192,9 +192,11 @@ Para subir SARIF, activar `upload-sarif` y conceder `security-events: write`
 solo al job correspondiente. Revisar permisos y confidencialidad: subir SARIF
 transfiere resultados a GitHub. En forks y Dependabot no se intenta esa subida.
 El Action valida un reporte fresco y propaga los errores; no añadir `|| true`.
-Las fixtures intencionalmente riesgosas de este repositorio disparan hallazgos:
-la política del autoescaneo requiere una decisión del mantenedor, no una
-excepción silenciosa en CI.
+El autoescaneo de este repositorio usa una
+[baseline aprobada de 25 detecciones](docs/PYPI_VALIDATION.md#diagnóstico-del-autoescaneo-en-github-actions):
+conserva el SARIF completo y exige huellas y contenido exactos; cualquier hallazgo
+nuevo o cambio en los archivos revisados, reglas o configuración bloquea.
+Estas excepciones internas no se aplican a proyectos cliente ni al Action.
 
 ## Desarrollo y controles
 

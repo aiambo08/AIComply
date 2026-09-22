@@ -63,9 +63,37 @@ La revisión del 22 de septiembre reproduce 25 hallazgos con análisis completad
 | `src/aicomply/rules/eu_ai_act/art10_data_gov.yaml`, `art11_tech_doc.yaml`, `art9_risk_mgmt.yaml` y `src/aicomply/rules/gdpr/art32_security.yaml` | 4 | Patrones y texto de remediación del catálogo |
 | `src/aicomply/scanner/ast_parser.py` | 1 | Ejemplo de asignación dentro de un comentario |
 
-El mismo fallo existía en el commit publicado de `main`; no se ha cambiado el
-umbral ni excluido esos archivos. El tratamiento de excepciones del autoescaneo
-requiere aprobación explícita. No aceptar nuevos hallazgos automáticamente.
+El mismo fallo existía en el commit publicado de `main`. El mantenedor autorizó
+el 22 de septiembre una baseline exacta para esas 25 detecciones. El workflow
+del repositorio ejecuta `scripts/check_self_scan.py`, que usa el mismo motor
+con el catálogo completo y la configuración del proyecto. El Action distribuido
+y la CLI conservan sus umbrales y códigos; no heredan estas excepciones.
+
+La política revisada está en `.github/self-scan-baseline.json`. Se comprueba:
+
+- Igualdad exacta de regla, ruta, línea y huella de cada hallazgo, incluida su
+  multiplicidad. Un hallazgo nuevo, modificado, duplicado o ausente bloquea.
+- SHA-256 de los bytes capturados por el motor para los siete archivos revisados.
+  Incluso un cambio que no modifica las detecciones requiere revisión.
+- Huellas de configuración y catálogo. Excluir rutas, desactivar reglas o cambiar
+  el catálogo invalida la baseline.
+
+El SARIF completo se escribe antes de evaluar las excepciones: las 25 detecciones
+siguen visibles, sin supresiones. Un desacuerdo con la baseline devuelve 1;
+un error de análisis, política malformada o escritura devuelve 2. Solo un
+análisis completo con coincidencia exacta devuelve 0. La subida exige un SARIF
+fresco de un análisis completado y los permisos correspondientes; no se intenta
+en forks o Dependabot. Un fallo de análisis no sube un informe anterior.
+
+```bash
+uv run --frozen python scripts/check_self_scan.py --output ../aicomply-self-scan.sarif
+```
+
+Para actualizar la baseline, revisar primero el SARIF y el diff del archivo
+completo, justificar cada excepción y someter los nuevos valores a revisión del
+mantenedor. No regenerarla automáticamente para aceptar un fallo. La regresión
+que compara el repositorio real con la baseline forma parte del gate de calidad
+y publicación, además del workflow de compliance.
 
 La comprobación de PyPI ahora espera también ambos archivos en el índice Simple,
 con pruebas de propagación parcial, agotamiento de reintentos, hashes distintos,
@@ -190,9 +218,9 @@ auditoría formal o pruebas exhaustivas de carga.
 ## Procedimiento de publicación
 
 Primero aprobar la PR y revisar los gates del commit que se vaya a publicar,
-incluidos los límites de sanitizadores descritos arriba. El autoescaneo del
-repositorio tiene hallazgos y su
-política de tratamiento requiere una decisión independiente; no se han silenciado.
+incluidos los límites de sanitizadores descritos arriba. El autoescaneo debe
+satisfacer la baseline aprobada; sus hallazgos permanecen visibles y no acreditan
+conformidad jurídica.
 
 1. Mantener el Trusted Publisher del proyecto `aicomply-cli` con el repositorio
    `aiambo08/AIComply`, workflow `publish.yml` y entorno `pypi`.

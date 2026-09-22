@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "config_fingerprint": "8417b4934909e164478511d157f99eac67a0bf1c6a25132ebd3c7fc80caed31d",
+  "rules_fingerprint": "370f20f693f9e1465cc39754b39cccab2ea465b091bc4c8220b3f72b38c6abb2",
+  "files": {
+    "examples/fintech_credit_scoring/risk_scoring_service.py": {
+      "sha256": "97136db737de06702d340415b8823ab571beb61204e08cb56c5a917ca3d03993",
+      "reason": "Intentionally unsafe demonstration; never run as a production service."
+    },
+    "scripts/smoke_distribution.py": {
+      "sha256": "80d880f988c27046c880353d1600b505d330f8d7932b741081ed50a305272b9e",
+      "reason": "Synthetic client source strings written for installed-package detection tests."
+    },
+    "src/aicomply/rules/eu_ai_act/art10_data_gov.yaml": {
+      "sha256": "06e4b8ccc56ceb0cc20a0171ee119fe2fb625acf6196f172e6c05adc6bd57db5",
+      "reason": "Declarative detection pattern in the reviewed rule catalog."
+    },
+    "src/aicomply/rules/eu_ai_act/art11_tech_doc.yaml": {
+      "sha256": "42ca282e852799bdefb485bf00408c47292ed7611dbb84663c602942c0c090c8",
+      "reason": "Declarative detection pattern in the reviewed rule catalog."
+    },
+    "src/aicomply/rules/eu_ai_act/art9_risk_mgmt.yaml": {
+      "sha256": "4c11bc865b55dc03dd034471abf94c683ad98cd14ea6b3bf8c306a3c7f223cbe",
+      "reason": "Declarative detection pattern in the reviewed rule catalog."
+    },
+    "src/aicomply/rules/gdpr/art32_security.yaml": {
+      "sha256": "124d5efee990cd5615da3384d94cc283ebc16d361bc72d2bc1ea49d2e8a7ef0c",
+      "reason": "Remediation text describing an insecure setting to remove."
+    },
+    "src/aicomply/scanner/ast_parser.py": {
+      "sha256": "a5cc2435e9a2c99af3350f0b62183b731af4cc795d95563ccb9d4631da4fa3e1",
+      "reason": "Assignment example in a source comment, not an executable assignment."
+    }
+  },
+  "findings": [
+    {
+      "id": "ae5b51fd324a37ac7dd91931541bbf26ab4764f529d99d8076db087dc32bf796",
+      "rule_id": "EUAIA-ART12-001", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 45
+    },
+    {
+      "id": "35bb5b3c86c0c10518608e4d82700d00aa13491ad97990661ccf578bfe02617b",
+      "rule_id": "EUAIA-ART14-001", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 61
+    },
+    {
+      "id": "cb097f436f713eb7139eb5571c04249449fdedcc93b20eac54ce6ecc90df136b",
+      "rule_id": "EUAIA-ART05-001", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 13
+    },
+    {
+      "id": "cef373d0c0a231e7958f0c0a6a681cb735ef9148b9a684497fd28b11e0521a9f",
+      "rule_id": "EUAIA-ART05-002", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 34
+    },
+    {
+      "id": "0facf8077011c791c6152d6fbb7206f0e1d96ee1e3621d11fd04fd676d2c2a11",
+      "rule_id": "GDPR-ART22-001", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 60
+    },
+    {
+      "id": "721e6140f8064a59b296ef4f669f1e04e2e249475583093f57f046fbcfc55f2e",
+      "rule_id": "GDPR-ART32-002", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 52
+    },
+    {
+      "id": "9c02a55ac5b2a5664b3bf7c4b43984bc58caf396ea4bde838d637a455dcc6a51",
+      "rule_id": "EUAIA-ART15-002", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 16
+    },
+    {
+      "id": "54eedc391787b346bd69f01f9bf454f278ae0820cfcda66b5385f7e45827ad5e",
+      "rule_id": "GDPR-ART32-001", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 16
+    },
+    {
+      "id": "9a3a63087baff064a65c62073eec466231928db9e75799a44f2b4e1530f22349",
+      "rule_id": "GDPR-ART32-003", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 17
+    },
+    {
+      "id": "630f58f0bb2874012b5cd84655e229e6ded2f9dd5bbf8a3147499ebff9950166",
+      "rule_id": "GDPR-ART05-002", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 21
+    },
+    {
+      "id": "08e9d154b15b4aba5e946515831f6ce6af5cc590a2fc1635e8a7fbea435b627b",
+      "rule_id": "GDPR-ART05-003", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 21
+    },
+    {
+      "id": "cf8f2b7a840b56f4a5082fa8f41b456048897f5d518a526452055170a0ee344f",
+      "rule_id": "GDPR-ART05-002", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 28
+    },
+    {
+      "id": "34f6daccc7988065f81839b5965a2299b1fc808c479ba0417ed79c5ac089dde0",
+      "rule_id": "GDPR-ART05-003", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 28
+    },
+    {
+      "id": "4f21f719ba3d31bc0ea53e03ae6037c9cdf9b585d407e8bd33c01d11d0efa971",
+      "rule_id": "GDPR-ART09-001", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 30
+    },
+    {
+      "id": "46add7424b8f5a417dd87f868672819d1b53f1093cd88b96b7ac546918efbbbf",
+      "rule_id": "EUAIA-ART13-001", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 37
+    },
+    {
+      "id": "668fe26b5e9267dca2ea30e97a7498ef38e1e9082a870b45258bf37862664643",
+      "rule_id": "EUAIA-ART15-003", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 41
+    },
+    {
+      "id": "da5eee65b7ec243252abb05123834f2632f219f9f4f3d5d12dc3822972eb200d",
+      "rule_id": "GDPR-ART32-002", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 55
+    },
+    {
+      "id": "c3ce733b83f36fb50f5fbe0b0aa71ccd65af8893ddbf4435a02f8a733cb5c688",
+      "rule_id": "EUAIA-ART50-002", "path": "examples/fintech_credit_scoring/risk_scoring_service.py", "line": 65
+    },
+    {
+      "id": "f6fb84453e854e8317fe2de8b3e3129b75edc16298098b4f2d6304693cf1db03",
+      "rule_id": "GDPR-ART05-002", "path": "scripts/smoke_distribution.py", "line": 130
+    },
+    {
+      "id": "ef5652d03b534e108594c11d5d2d2f672a3ead159ae1ef5c777b6cbb98feef46",
+      "rule_id": "GDPR-ART32-002", "path": "scripts/smoke_distribution.py", "line": 131
+    },
+    {
+      "id": "7b4920874a01ffe121875d24c7c9f44166b9cd7e7102deb781a78c124d8c8a0b",
+      "rule_id": "EUAIA-ART10-001", "path": "src/aicomply/rules/eu_ai_act/art10_data_gov.yaml", "line": 14
+    },
+    {
+      "id": "101012d7072f273f30b74c67e445140f7c4173c379c3a23093a51182deee22ef",
+      "rule_id": "EUAIA-ART11-001", "path": "src/aicomply/rules/eu_ai_act/art11_tech_doc.yaml", "line": 12
+    },
+    {
+      "id": "ab6e4e9959f87f68c0c9fbc1af7c483b758159d36b93996d68821e9f1aa433e9",
+      "rule_id": "EUAIA-ART09-001", "path": "src/aicomply/rules/eu_ai_act/art9_risk_mgmt.yaml", "line": 12
+    },
+    {
+      "id": "5a45afcc8a0dcda754b0b89c6612c8ea9d87c3836f354d2f19bb9b3e4b55bb67",
+      "rule_id": "GDPR-ART32-002", "path": "src/aicomply/rules/gdpr/art32_security.yaml", "line": 24
+    },
+    {
+      "id": "eb534063ffecf973671ab8cfa2da41c030157f0fc5abfa68f28463f659ca9d18",
+      "rule_id": "EUAIA-ART13-001", "path": "src/aicomply/scanner/ast_parser.py", "line": 111
+    }
+  ]
+}

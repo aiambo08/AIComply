@@ -7,6 +7,10 @@
   or yanked files.
 - Explain finding-policy failures and report counts in GitHub Action logs while
   preserving exit codes and SARIF uploads.
+- Enforce the owner-approved repository self-scan baseline: retain all 25 findings
+  in SARIF while requiring exact identities, source hashes and rule/configuration
+  fingerprints. New findings, stale entries, content drift and execution errors
+  block CI; client CLI and Action policies are unchanged.
 
 ## [2.0.0a0] - 2026-09-21
 
